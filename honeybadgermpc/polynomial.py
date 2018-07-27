@@ -2,9 +2,14 @@ import operator
 import random
 from functools import reduce
 from .field import GF, GFElement
+import sys
+import time
+from itertools import zip_longest
 
 
 def strip_trailing_zeros(a):
+    if len(a) == 0:
+        return []
     for i in range(len(a), 0, -1):
         if a[i-1] != 0:
             break
@@ -23,7 +28,8 @@ def polynomialsOver(field):
             self.coeffs = strip_trailing_zeros(coeffs)
             self.field = field
 
-        def isZero(self): return self.coeffs == []
+        def isZero(self):
+            return self.coeffs == [] or (len(self.coeffs) == 1 and self.coeffs[0] == 0)
 
         def __repr__(self):
             if self.isZero():
@@ -63,7 +69,8 @@ def polynomialsOver(field):
             assert n & (n-1) == 0, "n must be power of two"
             assert type(omega) is GFElement
             assert omega ** n == 1, "must be an n'th root of unity"
-            assert omega ** (n//2) != 1, "must be a primitive n'th root of unity"
+            assert omega ** (n //
+                             2) != 1, "must be a primitive n'th root of unity"
             coeffs = [b/n for b in fft_helper(ys, 1/omega, field)]
             return cls(coeffs)
 
@@ -76,7 +83,8 @@ def polynomialsOver(field):
 
         @classmethod
         def random(cls, degree, y0=None):
-            coeffs = [field(random.randint(0, field.modulus-1)) for _ in range(degree+1)]
+            coeffs = [field(random.randint(0, field.modulus-1))
+                      for _ in range(degree+1)]
             if y0 is not None:
                 coeffs[0] = y0
             return cls(coeffs)
@@ -99,6 +107,59 @@ def polynomialsOver(field):
             xs2 = poly.evaluate_fft(omega, 2*n)
 
             return xs2
+
+        # the valuation only gives 0 to the zero polynomial, i.e. 1+degree
+        def __abs__(self): return len(self.coeffs)
+
+        def __iter__(self): return iter(self.coeffs)
+
+        def __sub__(self, other): return self + (-other)
+
+        def __neg__(self): return Polynomial([-a for a in self])
+
+        def __len__(self): return len(self.coeffs)
+
+        def __add__(self, other):
+            newCoefficients = [sum(x) for x in zip_longest(
+                self, other, fillvalue=self.field(0))]
+            return Polynomial(newCoefficients)
+
+        def __mul__(self, other):
+            if self.isZero() or other.isZero():
+                return Zero()
+
+            newCoeffs = [self.field(0)
+                         for _ in range(len(self) + len(other) - 1)]
+
+            for i, a in enumerate(self):
+                for j, b in enumerate(other):
+                    newCoeffs[i+j] += a*b
+            return Polynomial(newCoeffs)
+
+        def degree(self): return abs(self) - 1
+
+        def leadingCoefficient(self): return self.coeffs[-1]
+
+        def __divmod__(self, divisor):
+            quotient, remainder = Zero(), self
+            divisorDeg = divisor.degree()
+            divisorLC = divisor.leadingCoefficient()
+
+            while remainder.degree() >= divisorDeg:
+                monomialExponent = remainder.degree() - divisorDeg
+                monomialZeros = [self.field(0)
+                                 for _ in range(monomialExponent)]
+                monomialDivisor = Polynomial(
+                    monomialZeros + [remainder.leadingCoefficient() / divisorLC])
+
+                quotient += monomialDivisor
+                remainder -= monomialDivisor * divisor
+                print(remainder.coeffs)
+
+            return quotient, remainder
+
+    def Zero():
+        return Polynomial([])
 
     _poly_cache[field] = Polynomial
     return Polynomial

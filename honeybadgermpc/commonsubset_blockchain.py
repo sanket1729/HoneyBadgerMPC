@@ -123,7 +123,7 @@ def run_eth():
         print('closing')
         loop.close()
 
-def test_eth():
+def test_acs_blockchain():
     import time
     #with run_and_terminate_process('testrpc -a 50 2>&1 | tee -a acctKeys.json', shell=True, stdout=sys.stdout, stderr=sys.stderr) as proc:
     cmd = "ganache-cli -p 8545 -a 50 -b 1 > acctKeys.json 2>&1"
@@ -134,4 +134,4 @@ def test_eth():
 
 if __name__ == '__main__':
     # Launch an ethereum test chain
-    test_eth()
+    test_acs_blockchain()

@@ -35,7 +35,7 @@ DOCS_REQUIRE = [
     'm2r',
 ]
 
-ETH_REQUIRES = ['web3', 'ethereum']
+ETH_REQUIRES = ['web3', 'ethereum', 'bitcoin']
 
 EXTRAS = {
     'test': TEST_REQUIRES,

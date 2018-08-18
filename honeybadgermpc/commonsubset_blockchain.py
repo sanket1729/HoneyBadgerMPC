@@ -99,7 +99,7 @@ def run_and_terminate_process(*args, **kwargs):
         p = subprocess.Popen(*args, **kwargs)
         yield p
     finally:
-        print("Killing ethereumjs-testrpc", p.pid)
+        print("Killing ganache-cli", p.pid)
         p.terminate() # send sigterm, or ...
         p.kill()      # send sigkill
         p.wait()
@@ -125,10 +125,10 @@ def run_eth():
 def main():
     import time
     #with run_and_terminate_process('testrpc -a 50 2>&1 | tee -a acctKeys.json', shell=True, stdout=sys.stdout, stderr=sys.stderr) as proc:
-    cmd = "testrpc -a 50 -b 1 > acctKeys.json 2>&1"
+    cmd = "ganache-cli -p 8545 -a 50 -b 1 > acctKeys.json 2>&1"
     print("Running", cmd)
     with run_and_terminate_process(cmd, shell=True) as proc:
-        time.sleep(2)
+        time.sleep(5)
         run_eth()
 
 if __name__ == '__main__':

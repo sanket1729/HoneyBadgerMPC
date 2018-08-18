@@ -76,4 +76,5 @@ setup(
         'Programming Language :: Python :: Implementation :: CPython',
     ],
     packages=find_packages(),
+    package_data={'honeybadgermpc':'honeybadgermpc/*.sol'},
 )

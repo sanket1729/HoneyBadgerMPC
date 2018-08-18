@@ -12,7 +12,7 @@ RUN apk --update add nodejs npm git cmake g++
 RUN npm install -g ganache-cli
 RUN git clone --recursive https://github.com/ethereum/solidity.git
 WORKDIR solidity
-RUN git checkout v0.4.8 # Old version necessary to work???
+RUN git checkout v0.4.24 # Old version necessary to work???
 RUN git submodule update --init --recursive
 RUN ./scripts/install_deps.sh
 RUN mkdir build/

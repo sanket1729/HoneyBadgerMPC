@@ -47,9 +47,10 @@ def handle_event(event):
 
 from ethereum.tools._solidity import compile_file, compile_code as compile_source
 from web3.contract import ConciseContract
+import os
 
 async def main_loop(w3):
-    compiled_sol = compile_source(open('commonsubset.sol').read()) # Compiled source code
+    compiled_sol = compile_source(open(os.path.join(os.path.dirname(__file__),'commonsubset.sol')).read()) # Compiled source code
     contract_interface = compiled_sol['<stdin>:CommonSubset']
     contract = w3.eth.contract(abi=contract_interface['abi'], bytecode=contract_interface['bin'])
     tx_hash = contract.constructor(w3.eth.accounts[:7],2).transact({'from':w3.eth.accounts[0], 'gas':820000})
@@ -122,7 +123,7 @@ def run_eth():
         print('closing')
         loop.close()
 
-def main():
+def test_eth():
     import time
     #with run_and_terminate_process('testrpc -a 50 2>&1 | tee -a acctKeys.json', shell=True, stdout=sys.stdout, stderr=sys.stderr) as proc:
     cmd = "ganache-cli -p 8545 -a 50 -b 1 > acctKeys.json 2>&1"
@@ -133,5 +134,4 @@ def main():
 
 if __name__ == '__main__':
     # Launch an ethereum test chain
-
-        main()
+    test_eth()

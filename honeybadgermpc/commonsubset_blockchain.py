@@ -1,4 +1,4 @@
-from commonsubset_functionality import CommonSubset_IdealProtocol
+from .commonsubset_functionality import CommonSubset_IdealProtocol
 """
 Implementation of Asynchronous Common Subset using an EVM blockchain
 """

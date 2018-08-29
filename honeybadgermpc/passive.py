@@ -2,6 +2,7 @@ import asyncio
 from asyncio import Future
 from .field import GF, GFElement
 from .polynomial import polynomialsOver
+from .jubjub import *
 from .router import simple_router
 import random
 
@@ -316,7 +317,9 @@ async def test_prog1(context):
 
     # Example of Beaver multiplication
     x = zeros[0] + context.Share(10)
+    # x = context.Share(10)
     y = zeros[1] + context.Share(15)
+    # y = context.Share(15)
 
     a, b, ab = triples[:3]
     # assert await a.open() * await b.open() == await ab.open()
@@ -352,6 +355,39 @@ async def test_prog2(context):
     print('[%d] Finished' % (context.myid,))
 
 
+async def test_prog3(context):
+    filename = 'sharedata/test_zeros-%d.share' % (context.myid,)
+    zeros = context.read_shares(open(filename))
+
+    # Example of jubjub
+    d = -(Field(10240)/Field(10241))
+    curve = Jubjub(Field(-1), d)
+
+    P = Point(curve, Field(0x18ea85ca00cb9d895cb7b8669baa263fd270848f90ebefabe95b38300e80bde1), Field(0x255fa75b6ef4d4e1349876df94ca8c9c3ec97778f89c0c3b2e4ccf25fdf9f7c1))
+    Q = Point(curve, Field(0x1624451837683b2c4d2694173df71c9174ffcc613788eef3a9c7a7d0011476fa), Field(0x6f76dbfd7c62860d59f5937fa66d0571158ff68f28ccd83a4cd41b9918ee8fe2))
+    
+    R = P + Q
+
+    x1 = zeros[0] + context.Share(P.x)
+    y1 = zeros[0] + context.Share(P.y)
+    x2 = zeros[1] + context.Share(Q.x)
+    y2 = zeros[1] + context.Share(Q.y)
+
+    # p = Point(curve, p_x, p_y)
+    # q = Point(curve, q_x, q_y)
+
+    x3 = ((x1 * y2) + (y1 * x2)) / (1 + d * x1 * x2 * y1 * y2)
+    y3 = ((y1 * y2) + (x1 * x2)) / (1 - d * x1 * x2 * y1 * y2)
+
+    X3, Y3 = await x3.open(), await y3.open()
+
+    assert X3 == R.x and Y3 == R.y
+
+
+    # print("P:", P)
+    # print("Q:", Q)
+    # print("P+Q:", P + Q)
+
 # Run some test cases
 if __name__ == '__main__':
     print('Generating random shares of zero in sharedata/')
@@ -365,5 +401,6 @@ if __name__ == '__main__':
     try:
         loop.run_until_complete(runProgramAsTasks(test_prog1, 3, 2))
         loop.run_until_complete(runProgramAsTasks(test_prog2, 3, 2))
+        loop.run_until_complete(runProgramAsTasks(test_prog3, 3, 2))
     finally:
         loop.close()

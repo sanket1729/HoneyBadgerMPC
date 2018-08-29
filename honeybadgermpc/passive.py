@@ -43,6 +43,17 @@ class PassiveMpc(object):
 
         self.Share = shareInContext(self)
 
+        # Preprocessing elements
+        filename = 'sharedata/test_zeros-%d.share' % (self.myid,)
+        self._zeros = iter(self.read_shares(open(filename)))
+        
+        filename = 'sharedata/test_rand-%d.share' % (self.myid,)
+        self._rands = iter(self.read_shares(open(filename)))
+    
+        filename = 'sharedata/test_triples-%d.share' % (self.myid,)
+        self._triples = iter(self.read_shares(open(filename)))
+        
+
     def _reconstruct(self, shareid):
         # Are there enough shares to reconstruct?
         shares = [(i+1, self._share_buffers[i][shareid])
@@ -75,6 +86,21 @@ class PassiveMpc(object):
 
         # Return future
         return opening
+
+    def get_triple(self):
+        a = next(self._triples)
+        b = next(self._triples)
+        ab = next(self._triples)
+        return a, b, ab
+    
+    def get_rand(self):
+        return next(self._rands)
+
+    def get_zero(self):
+        return next(self._zeros)
+
+    def get_bit(self):
+        return next(self._bits)
 
     async def _run(self):
         # Run receive loop as background task, until self.prog finishes
@@ -249,11 +275,11 @@ def shareInContext(context):
 # Create a fake network with N instances of the program
 async def runProgramAsTasks(program, N, t):
     loop = asyncio.get_event_loop()
-    sends, recvs = simple_router(N)
+    sends, recvs = simple_router(N)    
 
     tasks = []
     # bgtasks = []
-    for i in range(N):
+    for i in range(N):        
         context = PassiveMpc('sid', N, t, i, sends[i], recvs[i], program)
         tasks.append(loop.create_task(context._run()))
 
@@ -309,19 +335,13 @@ def generate_test_randoms(prefix, k, N, t):
 ###############
 async def test_prog1(context):
 
-    filename = 'sharedata/test_zeros-%d.share' % (context.myid,)
-    zeros = context.read_shares(open(filename))
-
-    filename = 'sharedata/test_triples-%d.share' % (context.myid,)
-    triples = context.read_shares(open(filename))
-
     # Example of Beaver multiplication
-    x = zeros[0] + context.Share(10)
+    x = context.get_zero() + context.Share(10)
     # x = context.Share(10)
-    y = zeros[1] + context.Share(15)
+    y = context.get_zero() + context.Share(15)
     # y = context.Share(15)
 
-    a, b, ab = triples[:3]
+    a, b, ab = context.get_triple()
     # assert await a.open() * await b.open() == await ab.open()
 
     D = (x - a).open()
@@ -344,11 +364,7 @@ async def test_prog1(context):
 # Read zeros from file, open them
 async def test_prog2(context):
 
-    filename = 'sharedata/test_zeros-%d.share' % (context.myid,)
-    shares = context.read_shares(open(filename))
-
-    print('[%d] read %d shares' % (context.myid, len(shares)))
-
+    shares = [context.get_zero() for _ in range(1000)]
     for share in shares[:100]:
         s = await share.open()
         assert s == 0
@@ -366,27 +382,14 @@ async def beaver_mult(context, x, y, a, b, ab):
 
 
 async def test_prog3(context):
-    filename = 'sharedata/test_zeros-%d.share' % (context.myid,)
-    zeros = context.read_shares(open(filename))
 
-    filename = 'sharedata/test_rand-%d.share' % (context.myid,)
-    rands = context.read_shares(open(filename))
-
-    filename = 'sharedata/test_triples-%d.share' % (context.myid,)
-    triples = context.read_shares(open(filename))
-
-    # Stream of Beaver triples to take from
-    _as = iter(triples[0::3])
-    _bs = iter(triples[1::3])
-    _abs = iter(triples[2::3])    
     def mul(x, y):
-        a, b, ab = next(_as), next(_bs), next(_abs)
+        a, b, ab = context.get_triple()
         return beaver_mult(context, x, y, a, b, ab)
 
     # Stream of random numbers for taking inverses
-    _rands = iter(rands)
     async def inverse(x):
-        _r = next(_rands)
+        _r = context.get_rand()
         # return [r] / open([r * x])
         rx = await (await mul(_r, x)).open()
         return (1/rx) * _r
@@ -400,10 +403,10 @@ async def test_prog3(context):
     
     R = P + Q
 
-    x1 = zeros[0] + context.Share(P.x)
-    y1 = zeros[1] + context.Share(P.y)
-    x2 = zeros[2] + context.Share(Q.x)
-    y2 = zeros[3] + context.Share(Q.y)
+    x1 = context.get_zero() + context.Share(P.x)
+    y1 = context.get_zero() + context.Share(P.y)
+    x2 = context.get_zero() + context.Share(Q.x)
+    y2 = context.get_zero() + context.Share(Q.y)
 
     # p = Point(curve, p_x, p_y)
     # q = Point(curve, q_x, q_y)

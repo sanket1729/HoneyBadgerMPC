@@ -41,7 +41,7 @@ class PassiveMpc(object):
         # shareid => { [playerid => share] }
         self._share_buffers = tuple([] for _ in range(N))
 
-        self.Share = shareInContext(self)
+        self.Share, self.ShareArray = shareInContext(self)
 
         # Preprocessing elements
         filename = 'sharedata/test_zeros-%d.share' % (self.myid,)
@@ -233,9 +233,12 @@ def shareInContext(context):
 
         # @typecheck(Share)
         # TODO
-        def __mul__(self, other): raise NotImplemented
+        def __mul__(self, other):
+            a, b, ab = context.get_triple()
+            raise NotImplemented
 
         def __str__(self): return '{%d}' % (self.v)
+
 
     def _binopShare(fut, other, op):
         assert type(other) in [ShareFuture, GFElementFuture, Share, GFElement]
@@ -267,7 +270,25 @@ def shareInContext(context):
             self.add_done_callback(cb1)
             return res
 
-    return Share
+    class ShareArray(object):
+        def __init__(self, shares):
+            # Initialized with a list of share objects
+            for share in shares:
+                assert type(share) is Share
+            self._shares = shares
+
+        async def open(self):
+            # Returns a list of field elements
+            # TODO: replace with batch recpub
+            return [await s.open() for s in self._shares]
+
+        def __add__(self, other): raise NotImplemented
+        def __sub__(self, other):
+            assert len(self._shares) == len(other._shares)
+            return ShareArray([(a-b) for (a,b) in zip(self._shares, other._shares)])
+        
+    return Share, ShareArray
+
 
 # Share = shareInContext(None)
 
@@ -360,6 +381,33 @@ async def test_prog1(context):
 
     print("[%d] Finished" % (context.myid,), X, Y, XY)
 
+async def test_batchbeaver(context):
+
+    # Demonstrates use of ShareArray batch interface
+
+    xs = [context.get_zero() + context.Share(i)    for i in range(100)]
+    ys = [context.get_zero() + context.Share(i+10) for i in range(100)]
+    xs = context.ShareArray(xs)
+    ys = context.ShareArray(ys)
+
+    As, Bs, ABs = [], [], []
+    for i in range(100):
+        A,B,AB = context.get_triple()
+        As.append(A)
+        Bs.append(B)
+        ABs.append(AB)
+    As = context.ShareArray(As)
+    Bs = context.ShareArray(Bs)
+    ABs = context.ShareArray(ABs)
+
+    Ds = await (xs - As).open()
+    Es = await (ys - Bs).open()
+
+    for i, (x, y, a, b, ab, D, E) in enumerate(zip(xs._shares, ys._shares, As._shares, Bs._shares, ABs._shares, Ds, Es)):
+        xy = context.Share(D*E) + D*b + E*a + ab
+        assert (await xy.open()) == i * (i + 10)
+
+    print("[%d] Finished batch beaver" % (context.myid,))
 
 # Read zeros from file, open them
 async def test_prog2(context):
@@ -370,6 +418,12 @@ async def test_prog2(context):
         assert s == 0
     print('[%d] Finished' % (context.myid,))
 
+    # Batch version
+    arr = context.ShareArray(shares[:100])
+    for s in await arr.open():
+        assert s == 0
+    print('[%d] Finished batch' % (context.myid,))
+
 async def beaver_mult(context, x, y, a, b, ab):
     D = await (x - a).open()
     E = await (y - b).open()
@@ -378,7 +432,6 @@ async def beaver_mult(context, x, y, a, b, ab):
     xy = context.Share(D*E) + D*b + E*a + ab
 
     return context.Share( await xy.open() )
-
 
 
 async def test_prog3(context):
@@ -439,8 +492,15 @@ if __name__ == '__main__':
     loop = asyncio.get_event_loop()
     loop.set_debug(True)
     try:
+<<<<<<< HEAD
         loop.run_until_complete(runProgramAsTasks(test_prog1, 3, 2))
         loop.run_until_complete(runProgramAsTasks(test_prog2, 3, 2))
         loop.run_until_complete(runProgramAsTasks(test_prog3, 3, 2))
+=======
+        loop.run_until_complete(runProgramInNetwork(test_prog1, 3, 2))
+        loop.run_until_complete(runProgramInNetwork(test_prog2, 3, 2))
+        loop.run_until_complete(runProgramInNetwork(test_prog3, 3, 2))
+        loop.run_until_complete(runProgramInNetwork(test_batchbeaver, 3, 2))
+>>>>>>> ac57a9a... Added a ShareArray class
     finally:
         loop.close()

@@ -300,7 +300,7 @@ def generate_test_zeros(prefix, k, N, t):
 def generate_test_randoms(prefix, k, N, t):
     polys = []
     for j in range(k):
-        polys.append(Poly.random(t, random.randint(0, Field.modulus-1)))
+        polys.append(Poly.random(t))
     write_polys(prefix, Field.modulus, N, t, polys)
 
 
@@ -354,10 +354,42 @@ async def test_prog2(context):
         assert s == 0
     print('[%d] Finished' % (context.myid,))
 
+async def beaver_mult(context, x, y, a, b, ab):
+    D = await (x - a).open()
+    E = await (y - b).open()
+
+    # This is a random share of x*y
+    xy = context.Share(D*E) + D*b + E*a + ab
+
+    return context.Share( await xy.open() )
+
+
 
 async def test_prog3(context):
     filename = 'sharedata/test_zeros-%d.share' % (context.myid,)
     zeros = context.read_shares(open(filename))
+
+    filename = 'sharedata/test_rand-%d.share' % (context.myid,)
+    rands = context.read_shares(open(filename))
+
+    filename = 'sharedata/test_triples-%d.share' % (context.myid,)
+    triples = context.read_shares(open(filename))
+
+    # Stream of Beaver triples to take from
+    _as = iter(triples[0::3])
+    _bs = iter(triples[1::3])
+    _abs = iter(triples[2::3])    
+    def mul(x, y):
+        a, b, ab = next(_as), next(_bs), next(_abs)
+        return beaver_mult(context, x, y, a, b, ab)
+
+    # Stream of random numbers for taking inverses
+    _rands = iter(rands)
+    async def inverse(x):
+        _r = next(_rands)
+        # return [r] / open([r * x])
+        rx = await (await mul(_r, x)).open()
+        return (1/rx) * _r
 
     # Example of jubjub
     d = -(Field(10240)/Field(10241))
@@ -369,20 +401,23 @@ async def test_prog3(context):
     R = P + Q
 
     x1 = zeros[0] + context.Share(P.x)
-    y1 = zeros[0] + context.Share(P.y)
-    x2 = zeros[1] + context.Share(Q.x)
-    y2 = zeros[1] + context.Share(Q.y)
+    y1 = zeros[1] + context.Share(P.y)
+    x2 = zeros[2] + context.Share(Q.x)
+    y2 = zeros[3] + context.Share(Q.y)
 
     # p = Point(curve, p_x, p_y)
     # q = Point(curve, q_x, q_y)
-
-    x3 = ((x1 * y2) + (y1 * x2)) / (1 + d * x1 * x2 * y1 * y2)
-    y3 = ((y1 * y2) + (x1 * x2)) / (1 - d * x1 * x2 * y1 * y2)
+    dx1x2y1y2 = d * await mul(await mul(x1, x2), await mul(y1, y2))
+    x3num = (await mul(x1, y2) + await mul(y1, x2))
+    x3den = (context.Share(1) + dx1x2y1y2)
+    x3 = await mul(x3num, await inverse(x3den))
+    y3num = (await mul(y1, y2) + await mul(x1, x2))
+    y3den = (context.Share(1) - dx1x2y1y2)
+    y3 = await mul(y3num, await inverse(y3den))
 
     X3, Y3 = await x3.open(), await y3.open()
 
     assert X3 == R.x and Y3 == R.y
-
 
     # print("P:", P)
     # print("Q:", Q)
@@ -392,6 +427,8 @@ async def test_prog3(context):
 if __name__ == '__main__':
     print('Generating random shares of zero in sharedata/')
     generate_test_zeros('sharedata/test_zeros', 1000, 3, 2)
+    print('Generating random shares in sharedata/')
+    generate_test_randoms('sharedata/test_rand', 1000, 3, 2)
     print('Generating random shares of triples in sharedata/')
     generate_test_triples('sharedata/test_triples', 1000, 3, 2)
 

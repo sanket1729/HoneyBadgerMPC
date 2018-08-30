@@ -2,7 +2,7 @@ import asyncio
 from asyncio import Future
 from .field import GF, GFElement
 from .polynomial import polynomialsOver
-from .jubjub import *
+from .jubjub import Point, Jubjub
 from .router import simple_router
 import random
 
@@ -46,13 +46,12 @@ class PassiveMpc(object):
         # Preprocessing elements
         filename = 'sharedata/test_zeros-%d.share' % (self.myid,)
         self._zeros = iter(self.read_shares(open(filename)))
-        
+
         filename = 'sharedata/test_rand-%d.share' % (self.myid,)
         self._rands = iter(self.read_shares(open(filename)))
-    
+
         filename = 'sharedata/test_triples-%d.share' % (self.myid,)
         self._triples = iter(self.read_shares(open(filename)))
-        
 
     def _reconstruct(self, shareid):
         # Are there enough shares to reconstruct?
@@ -92,7 +91,7 @@ class PassiveMpc(object):
         b = next(self._triples)
         ab = next(self._triples)
         return a, b, ab
-    
+
     def get_rand(self):
         return next(self._rands)
 
@@ -283,10 +282,11 @@ def shareInContext(context):
             return [await s.open() for s in self._shares]
 
         def __add__(self, other): raise NotImplemented
+
         def __sub__(self, other):
             assert len(self._shares) == len(other._shares)
-            return ShareArray([(a-b) for (a,b) in zip(self._shares, other._shares)])
-        
+            return ShareArray([(a-b) for (a, b) in zip(self._shares, other._shares)])
+
     return Share, ShareArray
 
 
@@ -296,11 +296,11 @@ def shareInContext(context):
 # Create a fake network with N instances of the program
 async def runProgramAsTasks(program, N, t):
     loop = asyncio.get_event_loop()
-    sends, recvs = simple_router(N)    
+    sends, recvs = simple_router(N)
 
     tasks = []
     # bgtasks = []
-    for i in range(N):        
+    for i in range(N):
         context = PassiveMpc('sid', N, t, i, sends[i], recvs[i], program)
         tasks.append(loop.create_task(context._run()))
 
@@ -381,18 +381,19 @@ async def test_prog1(context):
 
     print("[%d] Finished" % (context.myid,), X, Y, XY)
 
+
 async def test_batchbeaver(context):
 
     # Demonstrates use of ShareArray batch interface
 
-    xs = [context.get_zero() + context.Share(i)    for i in range(100)]
+    xs = [context.get_zero() + context.Share(i) for i in range(100)]
     ys = [context.get_zero() + context.Share(i+10) for i in range(100)]
     xs = context.ShareArray(xs)
     ys = context.ShareArray(ys)
 
     As, Bs, ABs = [], [], []
     for i in range(100):
-        A,B,AB = context.get_triple()
+        A, B, AB = context.get_triple()
         As.append(A)
         Bs.append(B)
         ABs.append(AB)
@@ -403,13 +404,17 @@ async def test_batchbeaver(context):
     Ds = await (xs - As).open()
     Es = await (ys - Bs).open()
 
-    for i, (x, y, a, b, ab, D, E) in enumerate(zip(xs._shares, ys._shares, As._shares, Bs._shares, ABs._shares, Ds, Es)):
+    for i, (x, y, a, b, ab, D, E) in enumerate(
+            zip(xs._shares, ys._shares,
+                As._shares, Bs._shares, ABs._shares, Ds, Es)):
         xy = context.Share(D*E) + D*b + E*a + ab
         assert (await xy.open()) == i * (i + 10)
 
     print("[%d] Finished batch beaver" % (context.myid,))
 
 # Read zeros from file, open them
+
+
 async def test_prog2(context):
 
     shares = [context.get_zero() for _ in range(1000)]
@@ -424,6 +429,7 @@ async def test_prog2(context):
         assert s == 0
     print('[%d] Finished batch' % (context.myid,))
 
+
 async def beaver_mult(context, x, y, a, b, ab):
     D = await (x - a).open()
     E = await (y - b).open()
@@ -431,7 +437,7 @@ async def beaver_mult(context, x, y, a, b, ab):
     # This is a random share of x*y
     xy = context.Share(D*E) + D*b + E*a + ab
 
-    return context.Share( await xy.open() )
+    return context.Share(await xy.open())
 
 
 async def test_prog3(context):
@@ -451,9 +457,13 @@ async def test_prog3(context):
     d = -(Field(10240)/Field(10241))
     curve = Jubjub(Field(-1), d)
 
-    P = Point(curve, Field(0x18ea85ca00cb9d895cb7b8669baa263fd270848f90ebefabe95b38300e80bde1), Field(0x255fa75b6ef4d4e1349876df94ca8c9c3ec97778f89c0c3b2e4ccf25fdf9f7c1))
-    Q = Point(curve, Field(0x1624451837683b2c4d2694173df71c9174ffcc613788eef3a9c7a7d0011476fa), Field(0x6f76dbfd7c62860d59f5937fa66d0571158ff68f28ccd83a4cd41b9918ee8fe2))
-    
+    P = Point(curve,
+              Field(0x18ea85ca00cb9d895cb7b8669baa263fd270848f90ebefabe95b38300e80bde1),
+              Field(0x255fa75b6ef4d4e1349876df94ca8c9c3ec97778f89c0c3b2e4ccf25fdf9f7c1))
+    Q = Point(curve,
+              Field(0x1624451837683b2c4d2694173df71c9174ffcc613788eef3a9c7a7d0011476fa),
+              Field(0x6f76dbfd7c62860d59f5937fa66d0571158ff68f28ccd83a4cd41b9918ee8fe2))
+
     R = P + Q
 
     x1 = context.get_zero() + context.Share(P.x)

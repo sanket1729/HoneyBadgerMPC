@@ -150,20 +150,26 @@ def decoding_message_with_none_elements(f, encodedmsg, p):
     assert(2*f + 1 <= nnone), "erasure too large, 2f + 1 > number of non-none elements!"
 
     _, _, solveSystem = makeEncoderDecoder(nnone, f+1, p)
-    Q, E = solveSystem(encodedmsg_drop_none, True)
+    Q, E = solveSystem(encodedmsg_drop_none, False)
     P, remainder = (Q.__divmod__(E))
-    print("P(x) = %r" % P)
-    print("r(x) = %r" % remainder)
+    # print("P(x) = %r" % P)
+    # print("r(x) = %r" % remainder)
 
     num_matching = 0
+    evil_nodes = []
     for i in range(len(encodedmsg)):
         if encodedmsg[i][1] == P(encodedmsg[i][0]):
             num_matching += 1
-            if num_matching == (2*f + 1):
-                break
+        else:
+            # print("evil nodes!!!!!!!!!!")
+            # print(encodedmsg[i][0])
+            # print(P)
+            # print(encodedmsg[i][1])
+            # print(P(encodedmsg[i][0]))
+            evil_nodes.append(encodedmsg[i][0])
 
     # assert(num_matching >= (2*f + 1)), "The decoded polynomial is not correct!"
     if num_matching < (2*f + 1):
-        return False, None
+        return False, None, evil_nodes
     else:
-        return True, P
+        return True, P, evil_nodes

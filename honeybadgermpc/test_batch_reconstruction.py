@@ -177,14 +177,14 @@ def test():
                 shared_secrets = [5, 13]
             if i == 3:
                 shared_secrets = [6, 16]
-            towait.append(batch_reconstruction(shared_secrets, p, t, N, i, sends[i], recvs[i]))
+            towait.append(batch_reconstruction(shared_secrets, p, t, N, i, sends[i], recvs[i], False))
         await asyncio.wait(towait)
 
     asyncio.set_event_loop(asyncio.new_event_loop())
     loop = asyncio.get_event_loop()
     loop.run_until_complete(_test())
     loop.close()
-
+#Need to get return value from asyn
 
 def test_with_none_values():
     # test with corrupted or none values

@@ -4,10 +4,15 @@ from .field import GF, GFElement
 from .polynomial import polynomialsOver
 from .jubjub import Point, Jubjub
 from .router import simple_router
+from .batch_reconstruction import batch_reconstruction
 import random
 
 
 class NotEnoughShares(Exception):
+    pass
+
+
+class BatchReconstructionFailed(Exception):
     pass
 
 
@@ -201,6 +206,8 @@ def shareInContext(context):
         def __init__(self, v):
             # v is the local value of the share
             if type(v) is int:
+                #for the purpose of calling batch reconstruction, might need to refactor in the future
+                self.v_int = v
                 v = Field(v)
             assert type(v) is GFElement
             self.v = v
@@ -279,7 +286,36 @@ def shareInContext(context):
         async def open(self):
             # Returns a list of field elements
             # TODO: replace with batch recpub
-            return [await s.open() for s in self._shares]
+            # async def batch_reconstruction(shared_secrets, p, t, n, myid, send, recv, debug):
+            length = self._shares
+            results = []
+            if length < (self.t + 1):
+                raise NotEnoughShares
+            shares_copy = [share for share in self._shares]
+            tmp = len(shares_copy) % (self.t + 1)
+            if tmp != 0:
+                for i in range((self.t + 1) - tmp):
+                    shares_copy.append(shares_copy[length - 1])
+            for i in range(len(shares_copy) // (self.t + 1)):
+                # shared_secrets = []
+                # for j in range(self.t + 1):
+                #     shared_secrets.append(self._shares[i*(self.t + 1)+j].v_int)
+                shared_secrets = [shares_copy[i*(self.t + 1)+j].v_int for j in range(self.t + 1)]
+                Solved, opened_poly, evil_ndoes = await batch_reconstruction(shared_secrets, p, self.N, self.t, self.myid, self.send, self.recv, False)
+                #construct openpoly in to field elements
+                if Solved:
+                    # coeffs = opened_poly.coeffs
+                    # for result in coeffs:
+                    #     results.append([field(result)])
+                    results.extend([Field(coeff) for coeff in opened_poly.coeffs])
+                else:
+                    raise BatchReconstructionFailed
+                    # continue
+                #record evil nodes
+                #do another batch
+                #return
+
+            return results
 
         def __add__(self, other): raise NotImplemented
 
@@ -312,6 +348,8 @@ async def runProgramAsTasks(program, N, t):
 # Generating test files
 #######################
 
+# p as an integer for calling batch_reconstruction
+p = 0x73eda753299d7d483339d80809a1d80553bda402fffe5bfeffffffff00000001
 # Fix the field for now
 Field = GF.get(0x73eda753299d7d483339d80809a1d80553bda402fffe5bfeffffffff00000001)
 Poly = polynomialsOver(Field)

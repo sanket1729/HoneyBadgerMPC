@@ -287,21 +287,22 @@ def shareInContext(context):
             # Returns a list of field elements
             # TODO: replace with batch recpub
             # async def batch_reconstruction(shared_secrets, p, t, n, myid, send, recv, debug):
-            length = self._shares
+            length = len(self._shares)
             results = []
-            if length < (self.t + 1):
+            if length < (context.t + 1):
                 raise NotEnoughShares
-            shares_copy = [share for share in self._shares]
-            tmp = len(shares_copy) % (self.t + 1)
+            # shares_copy = [share for share in self._shares]
+            tmp = length % (context.t + 1)
             if tmp != 0:
-                for i in range((self.t + 1) - tmp):
-                    shares_copy.append(shares_copy[length - 1])
-            for i in range(len(shares_copy) // (self.t + 1)):
+                for i in range((context.t + 1) - tmp):
+                    self._shares.append(self._shares[length - 1])
+            assert len(self._shares) % (context.t + 1) == 0
+            for i in range(len(self._shares) // (context.t + 1)):
                 # shared_secrets = []
                 # for j in range(self.t + 1):
                 #     shared_secrets.append(self._shares[i*(self.t + 1)+j].v_int)
-                shared_secrets = [shares_copy[i*(self.t + 1)+j].v_int for j in range(self.t + 1)]
-                Solved, opened_poly, evil_ndoes = await batch_reconstruction(shared_secrets, p, self.N, self.t, self.myid, self.send, self.recv, False)
+                shared_secrets = [self._shares[i*(context.t + 1)+j].v_int for j in range(context.t + 1)]
+                Solved, opened_poly, evil_ndoes = await batch_reconstruction(shared_secrets, p, context.N, context.t, context.myid, context.send, context.recv, True)
                 #construct openpoly in to field elements
                 if Solved:
                     # coeffs = opened_poly.coeffs
@@ -496,7 +497,7 @@ async def test_batchjubjub(context):
 
     for i, (x1, y1, x2, y2) in enumerate(
             zip(x1s._shares, y1s._shares, x2s._shares, y2s._shares)):
-    
+
         dx1x2y1y2 = p.curve.d * await mul(await mul(x1, x2), await mul(y1, y2))
         x3num = (await mul(x1, y2) + await mul(y1, x2))
         x3den = (context.Share(1) + dx1x2y1y2)
@@ -569,7 +570,7 @@ async def test_prog3(context):
     x2 = context.get_zero() + context.Share(Q.x)
     y2 = context.get_zero() + context.Share(Q.y)
 
-    
+
     dx1x2y1y2 = P.curve.d * await mul(await mul(x1, x2), await mul(y1, y2))
     x3num = (await mul(x1, y2) + await mul(y1, x2))
     x3den = (context.Share(1) + dx1x2y1y2)

@@ -5,11 +5,12 @@ import os
 import struct
 import socket
 
+import ssl
 
 class Sender(object):
     def __init__(self):
         self.receivers = {}
-        self.loop = asyncio.get_event_loop()
+        self.loop = asyncio.get_event_loop()        
 
     async def send(self, msg, ip, port):
         data = pickle.dumps(msg)
@@ -19,7 +20,11 @@ class Sender(object):
             if key not in self.receivers:
                 receiver = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
                 receiver.connect((ip, port))
-                receiver.setblocking(False)
+                #receiver.setblocking(False)
+                ctx = ssl.create_default_context(ssl.Purpose.CLIENT_AUTH, capath='certdata/player-1.cert')
+                ctx.verify_mode = ssl.CERT_REQUIRED
+                ctx.load_cert_chain('certdata/player-1.cert','certdata/player-1.key')
+                #receiver = ctx.wrap_socket(receiver)
                 self.receivers[key] = receiver
             else:
                 receiver = self.receivers[key]
@@ -50,6 +55,11 @@ def handle_result(future):
         loop.stop()
         future.result()
 
+def verify_cb(conn, cert, errnum, depth, ok):
+    certsubject = crypto.X509Name(cert.get_subject())
+    commonname = certsubject.commonName
+    print('Got certificate: ' + commonname)
+    return ok
 
 class Listener(object):
     def __init__(self, q, port):
@@ -58,11 +68,16 @@ class Listener(object):
         print('port',port)
         server.bind(('', port))
         server.listen(10)
-        server.setblocking(False)
+        #server.setblocking(False)
+
+        self.ctx = ssl.create_default_context(ssl.Purpose.CLIENT_AUTH, capath='certdata/player-1.cert')
+        self.ctx.verify_mode = ssl.CERT_REQUIRED
+        self.ctx.load_cert_chain('certdata/player-1.cert','certdata/player-1.key')
+        #server = self.ctx.wrap_socket(server, server_side=True)
         self.server = server
         self.q = q
         self.loop = asyncio.get_event_loop()
-        self.tasks = [self.loop.create_task(self.runServer())]
+        self.tasks = [self.loop.create_task(self.runServer())]        
 
     async def runServer(self):
         while True:

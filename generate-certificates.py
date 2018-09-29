@@ -87,10 +87,10 @@ if __name__ == "__main__":
     #ca_req = create_request(ca_key, "VIFF Certificate Authority")
     #ca_cert = create_cert(ca_req, ca_req, ca_key, 0)
 
-    for i in range(1, options.n + 1):
+    for i in range(0, options.n):
         print("Generating %s-%d.key" % (options.prefix, i))
         key = create_key(options.key_size)
-        req = create_request(key, "VIFF Player %d" % i)
+        req = create_request(key, "hbmpc_%d" % i)
         cert = create_cert(req, req, key, i)
         #cert = create_cert(req, ca_cert, ca_key, i)
 

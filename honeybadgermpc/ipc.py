@@ -1,9 +1,10 @@
 import pickle
 import asyncio
 import sys
-import os
 import struct
 import socket
+from .passive import PassiveMpc
+
 
 class Sender(object):
     def __init__(self):
@@ -105,7 +106,7 @@ class NodeDetails(object):
         self.port = port
 
 
-def process_router(config, id):
+def socket_communicator(config, id):
     sender = Sender()
     q = asyncio.Queue()
     listener = Listener(q, config[id].port)
@@ -133,24 +134,30 @@ def process_router(config, id):
     return (makeSend(id), makeRecv(id), sender, listener)
 
 
+async def runProgramAsProcesses(program, config, N, t, id):
+    loop = asyncio.get_event_loop()
+    send, recv, sender, listener = socket_communicator(config, id)
+    # Need to give time to the listener coroutine to start
+    #  or else the sender will get a connection refused.
+    await asyncio.sleep(1)
+    context = PassiveMpc('sid', N, t, id, send, recv, program)
+    results = await loop.create_task(context._run())
+    sender.close()
+    listener.close()
+    return results
+
+
 if __name__ == "__main__":
-    from .passive import runProgramAsProcesses
     from .passive import generate_test_zeros, generate_test_triples
     from .passive import test_prog1, test_prog2
 
-    # The "ALIAS" environment variable should be set.
-    # It should be of the form <prefix>_<party_id> for each of the parties.
     # N - total number of parties
     # t - total number of corrupt parties
     # port - port to be used for communication between parties
+    # host_id - Of the form <prefix>_<party_id>
     N, t, port = int(sys.argv[1]), int(sys.argv[2]), 7000
-    host = os.environ.get('ALIAS').split("_")
+    host = sys.argv[3].split("_")
     prefix, id = host[0] + "_", int(host[1])
-
-    # Use this config if you want to test it on multiple processes on the same server
-    # id = int(sys.argv[2])
-    # config = {
-    #     i: NodeDetails("localhost", p) for i, p in enumerate(range(port, port+n))}
 
     # Only one party needs to generate the initial shares
     if id == 0:

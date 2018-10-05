@@ -158,11 +158,11 @@ if __name__ == "__main__":
     host = sys.argv[3].split("_")
     prefix, id = host[0] + "_", int(host[1])
     # Only one party needs to generate the initial shares
-    # if id == 0:
-    #     print('Generating random shares of zero in sharedata/')
-    #     generate_test_zeros('sharedata/test_zeros', 1000, N, t)
-    #     print('Generating random shares of triples in sharedata/')
-    #     generate_test_triples('sharedata/test_triples', 1000, N, t)
+    if id == 0:
+        print('Generating random shares of zero in sharedata/')
+        generate_test_zeros('sharedata/test_zeros', 1000, N, t)
+        print('Generating random shares of triples in sharedata/')
+        generate_test_triples('sharedata/test_triples', 1000, N, t)
 
     asyncio.set_event_loop(asyncio.new_event_loop())
     loop = asyncio.get_event_loop()

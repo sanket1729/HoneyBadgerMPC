@@ -139,10 +139,13 @@ async def runProgramAsProcesses(program, config, t, id):
     #  or else the sender will get a connection refused.
     await asyncio.sleep(1)
     await sender.connect()
+    await asyncio.sleep(1)
     context = PassiveMpc('sid', N, t, id, send, recv, program)
     results = await asyncio.ensure_future(context._run())
+    await asyncio.sleep(1)
     sender.close()
     await listener.close()
+    await asyncio.sleep(1)
     return results
 
 

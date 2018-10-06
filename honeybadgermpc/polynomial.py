@@ -60,6 +60,23 @@ def polynomialsOver(field):
             return sum(map(operator.mul, ys, vector))
 
         @classmethod
+        def interpolate(cls, shares):
+            X = cls([0,1]) # This is the polynomial f(x) = x
+            ONE = cls([1]) # This is the polynomial f(x) = 1
+            xs, ys = zip(*shares)
+            def lagrange(xi):
+                print('xs:',xs)
+                mul = lambda a,b: a*b
+                num = reduce(mul, [ X - cls([xj])  for xj in xs if xj != xi], ONE)
+                den = reduce(mul, [xi - xj  for xj in xs if xj != xi], field(1))
+                return num * cls([1 / den])
+            f = cls([0])
+            for xi, yi in zip(xs, ys):
+                pi = lagrange(xi)
+                f += cls([yi]) * pi
+            return f
+        
+        @classmethod
         def interpolate_fft(cls, ys, omega):
             """
             Returns a polynoial f of given degree,
@@ -157,6 +174,16 @@ def polynomialsOver(field):
                 print(remainder.coeffs)
 
             return quotient, remainder
+
+        def __truediv__(self, divisor):
+            if divisor.isZero():
+                raise ZeroDivisionError
+            return divmod(self, divisor)[0]
+        
+        def __mod__(self, divisor):
+            if divisor.isZero():
+                raise ZeroDivisionError
+            return divmod(self, divisor)[1]
 
     def Zero():
         return Polynomial([])

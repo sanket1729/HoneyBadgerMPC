@@ -64,7 +64,7 @@ def makeEncoderDecoder(n, k, p, omega=None):
     #    f( omega^i ) where omega. If omega is an n'th root of unity,
     # then we can do efficient FFT-based polynomial interpolations.
     if omega is None:
-        point = lambda i: Fp(i)
+        point = lambda i: Fp(1+i)
     else:
         point = lambda i: Fp(omega)**i
 
@@ -87,7 +87,6 @@ def makeEncoderDecoder(n, k, p, omega=None):
         https://jeremykun.com/2015/09/07/welch-berlekamp/
         """
         for e in range(maxE, 0, -1):
-            print("\ne is %r" % e)
             ENumVars = e + 1
             QNumVars = e + k
 
@@ -127,7 +126,7 @@ def makeEncoderDecoder(n, k, p, omega=None):
                 print("r(x) = %r" % remainder)
             if remainder.isZero():
                 return Q, E
-        raise Exception("found no divisors!")
+        raise ValueError("found no divisors!")
 
     def decode(encodedMessage, debug=False):
         assert(len(encodedMessage) == n)

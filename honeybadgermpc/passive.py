@@ -15,6 +15,9 @@ class NotEnoughShares(Exception):
 class BatchReconstructionFailed(Exception):
     pass
 
+zeros_files_prefix = None # 'sharedata/test_zeros'
+triples_files_prefix = None # 'sharedata/test_triples'
+random_files_prefix = None #'sharedata/test_random'
 
 class PassiveMpc(object):
 
@@ -49,13 +52,13 @@ class PassiveMpc(object):
         self.Share, self.ShareArray = shareInContext(self)
 
         # Preprocessing elements
-        filename = 'sharedata/test_zeros-%d.share' % (self.myid,)
+        filename = f'{zeros_files_prefix}-{self.myid}.share'
         self._zeros = iter(self.read_shares(open(filename)))
 
-        filename = 'sharedata/test_rand-%d.share' % (self.myid,)
+        filename = f'{random_files_prefix}-{self.myid}.share'
         self._rands = iter(self.read_shares(open(filename)))
 
-        filename = 'sharedata/test_triples-%d.share' % (self.myid,)
+        filename = f'{triples_files_prefix}-{self.myid}.share'
         self._triples = iter(self.read_shares(open(filename)))
 
     def _reconstruct(self, shareid):
@@ -589,7 +592,7 @@ if __name__ == '__main__':
     print('Generating random shares of zero in sharedata/')
     generate_test_zeros('sharedata/test_zeros', 1000, 3, 2)
     print('Generating random shares in sharedata/')
-    generate_test_randoms('sharedata/test_rand', 1000, 3, 2)
+    generate_test_randoms('sharedata/test_random', 1000, 3, 2)
     print('Generating random shares of triples in sharedata/')
     generate_test_triples('sharedata/test_triples', 1000, 3, 2)
 

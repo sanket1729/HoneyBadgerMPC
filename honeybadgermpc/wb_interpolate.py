@@ -53,7 +53,7 @@ def makeEncoderDecoder(n, k, p, omega=None):
         raise Exception(
             "Must have k <= n <= p but instead had (n,k,p) == (%r, %r, %r)" % (n, k, p))
     t = k - 1 # degree of polynomial
-    Fp = GF(p)
+    Fp = GF.get(p)
     Poly = polynomialsOver(Fp)
 
     # Maximum number of errors to tolerate

@@ -2,20 +2,21 @@ from pytest import mark
 
 
 @mark.asyncio
-@mark.usefixtures('zeros_shares_files')
-async def test_open_shares(zeros_files_prefix):
+@mark.usefixtures('zeros_shares_files', 'random_shares_files', 'triples_shares_files')
+async def test_open_shares(zeros_files_prefix, random_shares_files, triples_files_prefix):
+    import honeybadgermpc.passive
+    honeybadgermpc.passive.zeros_files_prefix = zeros_files_prefix
+    honeybadgermpc.passive.random_files_prefix = zeros_files_prefix
+    honeybadgermpc.passive.triples_files_prefix = triples_files_prefix
+
     from honeybadgermpc.passive import runProgramAsTasks
     N, t = 3, 2
     number_of_secrets = 100
 
     async def _prog(context):
-        filename = f'{zeros_files_prefix}-{context.myid}.share'
-        shares = context.read_shares(open(filename))
-
-        print('[%d] read %d shares' % (context.myid, len(shares)))
-
         secrets = []
-        for share in shares[:number_of_secrets]:
+        for _ in range(number_of_secrets):
+            share = context.get_zero()
             s = await share.open()
             assert s == 0
             secrets.append(s)
@@ -29,23 +30,23 @@ async def test_open_shares(zeros_files_prefix):
 
 
 @mark.asyncio
-@mark.usefixtures('zeros_shares_files', 'triples_shares_files')
-async def test_beaver_mul_with_zeros(zeros_files_prefix, triples_files_prefix):
+@mark.usefixtures('zeros_shares_files', 'random_shares_files', 'triples_shares_files')
+async def test_beaver_mul_with_zeros(zeros_files_prefix, random_shares_files, triples_files_prefix):
+    import honeybadgermpc.passive
+    honeybadgermpc.passive.zeros_files_prefix = zeros_files_prefix
+    honeybadgermpc.passive.random_files_prefix = zeros_files_prefix
+    honeybadgermpc.passive.triples_files_prefix = triples_files_prefix
+
     from honeybadgermpc.passive import runProgramAsTasks
     N, t = 3, 2
     x_secret, y_secret = 10, 15
 
     async def _prog(context):
-        filename = f'{zeros_files_prefix}-{context.myid}.share'
-        zeros = context.read_shares(open(filename))
-        filename = f'{triples_files_prefix}-{context.myid}.share'
-        triples = context.read_shares(open(filename))
-
         # Example of Beaver multiplication
-        x = zeros[0] + context.Share(x_secret)
-        y = zeros[1] + context.Share(y_secret)
+        x = context.get_zero() + context.Share(x_secret)
+        y = context.get_zero() + context.Share(y_secret)
 
-        a, b, ab = triples[:3]
+        a, b, ab = context.get_triple()
         assert await a.open() * await b.open() == await ab.open()
 
         D = (x - a).open()

@@ -1,5 +1,4 @@
-# from honeybadgermpc.wb_interpolate import makeEncoderDecoder
-from honeybadgermpc.wb_interpolate import decoding_message_with_none_elements
+from honeybadgermpc.wb_interpolate import makeEncoderDecoder
 from honeybadgermpc.field import GF
 from honeybadgermpc.polynomial import polynomialsOver
 # from honeybadgermpc.test-asyncio-simplerouter import simple_router

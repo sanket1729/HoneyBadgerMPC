@@ -80,7 +80,7 @@ class Share():
 async def progtest(shared, N, myid, send, recv):
     print('myid:', myid)
     print(shared)
-    Fp = GF(p)
+    Fp = GF.get(p)
     Poly = polynomialsOver(Fp)
     tmp_poly = Poly(shared)
 

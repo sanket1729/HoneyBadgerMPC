@@ -3,12 +3,14 @@ from honeybadgermpc.field import GF
 from honeybadgermpc.polynomial import polynomialsOver
 import asyncio
 
+
 async def attemptReconstruct(field_futures, field, n, t, nAvailable, point):
     # Wait for nAvailable of field_futures to be done
     async def waitFor(aws, to_wait):
         done, pending = set(), set(aws)
         while len(done) < to_wait:
-            _d, pending = await asyncio.wait(pending, return_when=asyncio.FIRST_COMPLETED)
+            _d, pending = await asyncio.wait(pending,
+                                             return_when=asyncio.FIRST_COMPLETED)
             done |= _d
         return done, pending
 
@@ -27,7 +29,8 @@ async def attemptReconstruct(field_futures, field, n, t, nAvailable, point):
     coincides = 0
     failures_detected = set()
     for j in range(n):
-        if not field_futures[j].done(): continue
+        if not field_futures[j].done():
+            continue
         if P(point(j)) == field_futures[j].result():
             coincides += 1
         else:
@@ -44,13 +47,15 @@ async def robust_reconstruct(field_futures, field, n, t, point):
     # trying to reconstruct each time
     for nAvailable in range(2*t + 1, n+1):
         try:
-            P, failures = await attemptReconstruct(field_futures, field, n, t, nAvailable, point)
+            P, failures = await attemptReconstruct(
+                field_futures, field, n, t, nAvailable, point)
             return P, failures
         except ValueError as e:
             if str(e) in ("Wrong degree", "no divisors found"):
                 continue
 
     assert False, "shouldn't reach the end here"
+
 
 async def batch_reconstruction(shared_secrets, p, t, n, myid, send, recv, debug):
     """
@@ -60,7 +65,7 @@ async def batch_reconstruction(shared_secrets, p, t, n, myid, send, recv, debug)
       t: degree t polynomial
       n: total number of nodes n=3t+1
       myid: id of the specific node running batch_reconstruction function
-    
+
     output:
       the reconstructed array of t+1 shares
 
@@ -75,7 +80,8 @@ async def batch_reconstruction(shared_secrets, p, t, n, myid, send, recv, debug)
 
     Fp = GF.get(p)
     Poly = polynomialsOver(Fp)
-    point = lambda i: Fp(i+1) # TODO: make it use omega
+
+    def point(i): return Fp(i+1)  # TODO: make it use omega
 
     # Reconstruct a batch of exactly t+1 secrets
     assert len(shared_secrets) == t+1
@@ -107,13 +113,13 @@ async def batch_reconstruction(shared_secrets, p, t, n, myid, send, recv, debug)
 
         #  Evaluate and send f(j,i) for each other participating party Pj
         for j in range(n):
-            send(j, ('R1', f_poly(point(j))))        
+            send(j, ('R1', f_poly(point(j))))
 
         # Robustly reconstruct f(i,X)
         P1, failures_detected = await robust_reconstruct(round1_shares, Fp, n, t, point)
         if debug:
             print(f"I am {myid} and evil nodes are {failures_detected}")
-        
+
         # Round 2:
         # Evaluate and send f(i,0) to each other party
         for j in range(n):
@@ -122,7 +128,7 @@ async def batch_reconstruction(shared_secrets, p, t, n, myid, send, recv, debug)
         # Robustly reconstruct f(X,0)
         P2, failures_detected = await robust_reconstruct(round2_shares, Fp, n, t, point)
 
-        #print(f"I am {myid} and the secret polynomial is {P2}")
+        # print(f"I am {myid} and the secret polynomial is {P2}")
         return P2.coeffs
 
     finally:

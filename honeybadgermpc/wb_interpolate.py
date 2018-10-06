@@ -12,7 +12,7 @@
 #
 #  Input:
 #   k=3, n=4,  message=[k0, k1, k2]
-# 
+#
 #    the degree-t=2 polynomial is  f = k2 x^2 + k1 x + k0
 #
 #  Output: [ m0=f(w^0),
@@ -43,6 +43,7 @@ from honeybadgermpc.linearsolver import someSolution
 from honeybadgermpc.field import GF
 from honeybadgermpc.polynomial import polynomialsOver
 
+
 def makeEncoderDecoder(n, k, p, omega=None):
     """
     n: number of symbols to encode
@@ -52,21 +53,18 @@ def makeEncoderDecoder(n, k, p, omega=None):
     if not k <= n <= p:
         raise Exception(
             "Must have k <= n <= p but instead had (n,k,p) == (%r, %r, %r)" % (n, k, p))
-    t = k - 1 # degree of polynomial
+    t = k - 1  # degree of polynomial
     Fp = GF.get(p)
     Poly = polynomialsOver(Fp)
-
-    # Maximum number of errors to tolerate
-    maxE = ((n - k) // 2)
 
     # the message points correspond to polynomial evaluations
     # at either f(i) for convenience, or
     #    f( omega^i ) where omega. If omega is an n'th root of unity,
     # then we can do efficient FFT-based polynomial interpolations.
     if omega is None:
-        point = lambda i: Fp(1+i)
+        def point(i): return Fp(1+i)
     else:
-        point = lambda i: Fp(omega)**i
+        def point(i): return Fp(omega)**i
 
     # message is a list of integers at most p
     def encode(message):
@@ -94,7 +92,7 @@ def makeEncoderDecoder(n, k, p, omega=None):
                 return (
                     [b * a**j for j in range(ENumVars)] +
                     [-1 * a**j for j in range(QNumVars)] + [0]
-                ) # the "extended" part of the linear system
+                )  # the "extended" part of the linear system
 
             system = (
                 [row(i, a, b) for (i, (a, b)) in enumerate(encodedMessage)] +
@@ -106,7 +104,7 @@ def makeEncoderDecoder(n, k, p, omega=None):
                 print("\nsystem is:\n\n")
                 for row in system:
                     print("\t%r" % (row,))
-                        
+
             solution = someSolution(system, freeVariableValue=1)
             E = Poly([solution[j] for j in range(e + 1)])
             Q = Poly([solution[j] for j in range(e + 1, len(solution))])
@@ -130,16 +128,17 @@ def makeEncoderDecoder(n, k, p, omega=None):
 
     def decode(encodedMessage, debug=False):
         assert(len(encodedMessage) == n)
-        c = sum(m is None for m in encodedMessage) # number of erasures
+        c = sum(m is None for m in encodedMessage)  # number of erasures
         assert(t + 1 + c <= n)
-        e = (n - c - t - 1) // 2 # number of errors to correct
+        e = (n - c - t - 1) // 2  # number of errors to correct
 
         if debug:
             print('n:', n, 'k:', k, 't:', t)
             print('decoding with e:', e)
             print('decoding with c:', c)
 
-        encM = [(point(i), m) for i,m in enumerate(encodedMessage) if m is not None]
+        encM = [(point(i), m)
+                for i, m in enumerate(encodedMessage) if m is not None]
 
         if e == 0:
             # decode with no errors

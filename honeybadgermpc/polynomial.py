@@ -61,20 +61,22 @@ def polynomialsOver(field):
 
         @classmethod
         def interpolate(cls, shares):
-            X = cls([0,1]) # This is the polynomial f(x) = x
-            ONE = cls([1]) # This is the polynomial f(x) = 1
+            X = cls([0, 1])  # This is the polynomial f(x) = x
+            ONE = cls([1])  # This is the polynomial f(x) = 1
             xs, ys = zip(*shares)
+
             def lagrange(xi):
-                mul = lambda a,b: a*b
-                num = reduce(mul, [ X - cls([xj])  for xj in xs if xj != xi], ONE)
-                den = reduce(mul, [xi - xj  for xj in xs if xj != xi], field(1))
+                def mul(a, b): return a*b
+                num = reduce(mul, [X - cls([xj])
+                                   for xj in xs if xj != xi], ONE)
+                den = reduce(mul, [xi - xj for xj in xs if xj != xi], field(1))
                 return num * cls([1 / den])
             f = cls([0])
             for xi, yi in zip(xs, ys):
                 pi = lagrange(xi)
                 f += cls([yi]) * pi
             return f
-        
+
         @classmethod
         def interpolate_fft(cls, ys, omega):
             """
@@ -94,7 +96,8 @@ def polynomialsOver(field):
             assert n & (n-1) == 0, "n must be power of two"
             assert type(omega) is GFElement
             assert omega ** n == 1, "must be an n'th root of unity"
-            assert omega ** (n//2) != 1, "must be a primitive n'th root of unity"
+            assert omega ** (n //
+                             2) != 1, "must be a primitive n'th root of unity"
             return fft(self, omega, n)
 
         @classmethod
@@ -114,7 +117,8 @@ def polynomialsOver(field):
             n = len(xs)
             assert n & (n-1) == 0, "n must be power of 2"
             assert pow(omega, 2*n) == 1, "omega must be 2n'th root of unity"
-            assert pow(omega, n) != 1, "omega must be primitive 2n'th root of unity"
+            assert pow(
+                omega, n) != 1, "omega must be primitive 2n'th root of unity"
 
             # Interpolate the polynomial up to degree n
             poly = cls.interpolate_fft(xs, omega**2)
@@ -177,7 +181,7 @@ def polynomialsOver(field):
             if divisor.isZero():
                 raise ZeroDivisionError
             return divmod(self, divisor)[0]
-        
+
         def __mod__(self, divisor):
             if divisor.isZero():
                 raise ZeroDivisionError
@@ -245,7 +249,8 @@ def fft(poly, omega, n, seed=None):
 
 
 if __name__ == "__main__":
-    field = GF.get(0x73eda753299d7d483339d80809a1d80553bda402fffe5bfeffffffff00000001)
+    field = GF.get(
+        0x73eda753299d7d483339d80809a1d80553bda402fffe5bfeffffffff00000001)
     Poly = polynomialsOver(field)
     poly = Poly.random(degree=7)
     poly = Poly([1, 5, 3, 15, 0, 3])

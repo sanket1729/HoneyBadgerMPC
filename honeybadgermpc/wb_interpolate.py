@@ -1,13 +1,41 @@
-"""
-input: points in form (x,y)
-output: coefficients of interpolated polynomial
-"""
-
-# hardcode the input
-
-
 # an encoder and decoder for Reed-Solomon codes with coefficients in Z/p for a prime p
 # decoder uses the Berlekamp-Welch algorithm
+#
+# Code mostly due to Jeremy Kun
+#   https://jeremykun.com/2015/09/07/welch-berlekamp/
+#
+# Encoding:
+#  k=t+1 is the number of code symbols in the original message.
+#  We encode these as n evaluations of a degree-t polynomial, where the
+#  original t+1 symbols are treated as coefficients of the polynomial.
+#  n is the total number of messages sent out == total number of nodes
+#
+#  Input:
+#   k=3, n=4,  message=[k0, k1, k2]
+# 
+#    the degree-t=2 polynomial is  f = k2 x^2 + k1 x + k0
+#
+#  Output: [ m0=f(w^0),
+#            m1=f(w^1),
+#            m2=f(w^2),
+#            m3=f(w^3) ]
+#
+# Decoding:
+#  Given t+1 correct points, we could correctly decode the degree-t poylomial
+#  using ordinary interpolation. Using the B-W algorithm, given t+1+e correct
+#  correct points we can identify and remove up to e errors.
+#
+#  The inputs are passed as list of n points, where at most t+1 points are non-none.
+#  None values are treated as erasures.
+#  Example:
+#  [m0, m1, None, m3]
+#
+#  Since we have at most n message symbols, the most errors we hope to tolerate
+#  is when n=t+1+2e, so e <= maxE = (n-1-t)//2.
+#
+#  We can also correct a mixture of c erasures and e errors, as long as
+#  n=t+1+c+2e.
+#
 
 # for solving a linear system
 from honeybadgermpc.linearsolver import someSolution
@@ -15,82 +43,59 @@ from honeybadgermpc.linearsolver import someSolution
 from honeybadgermpc.field import GF
 from honeybadgermpc.polynomial import polynomialsOver
 
-# n is the total number of messages send out == total number of nodes
-# k is the total number of code symbols, k = t + 1 with degree t polynomial
-# maxE is the max errors the decoding function can handle
-
-
-def makeEncoderDecoder(n, k, p):
+def makeEncoderDecoder(n, k, p, omega=None):
+    """
+    n: number of symbols to encode
+    k: number of symbols in the message
+        (k=t+1) where t is the degree of the polynomial
+    """
     if not k <= n <= p:
         raise Exception(
             "Must have k <= n <= p but instead had (n,k,p) == (%r, %r, %r)" % (n, k, p))
-
+    t = k - 1 # degree of polynomial
     Fp = GF(p)
     Poly = polynomialsOver(Fp)
-    # maximum allowed number of errors
+
+    # Maximum number of errors to tolerate
+    maxE = ((n - k) // 2)
+
+    # the message points correspond to polynomial evaluations
+    # at either f(i) for convenience, or
+    #    f( omega^i ) where omega. If omega is an n'th root of unity,
+    # then we can do efficient FFT-based polynomial interpolations.
+    if omega is None:
+        point = lambda i: Fp(i)
+    else:
+        point = lambda i: Fp(omega)**i
 
     # message is a list of integers at most p
     def encode(message):
         if not all(x < p for x in message):
             raise Exception(
                 "Message is improperly encoded as integers < p. It was:\n%r" % message)
+        assert len(message) == t + 1
 
         thePoly = Poly(message)
-        return [[Fp(i), thePoly(Fp(i))] for i in range(n)]
+        return [thePoly(point(i)) for i in range(n)]
 
-    def solveSystem(encodedMessage, debug=False):
-        maxE = ((n - k) // 2)
-        print("MaxE is", maxE, "hahahha")
-        if maxE > 0:
-            for e in range(maxE, 0, -1):
-                print("\ne is %r" % e)
-                ENumVars = e + 1
-                QNumVars = e + k
+    def solveSystem(encodedMessage, maxE, debug=False):
+        """
+        input: points in form (x,y)
+        output: coefficients of interpolated polynomial
 
-                def row(i, a, b):
-                    # the "extended" part of the linear system
-                    return ([
-                        b * a**j for j in range(ENumVars)] +
-                        [-1 * a**j for j in range(QNumVars)] + [0])
-
-                system = (
-                    [row(i, a, b) for (i, (a, b)) in enumerate(encodedMessage)] +
-                    [[0] * (ENumVars - 1) + [1] + [0] * (QNumVars) + [1]]
-                )  # ensure coefficient of x^e in E(x) is 1
-
-                if debug:
-                    print("\ne is %r" % e)
-                    print("\nsystem is:\n\n")
-                    for row in system:
-                        print("\t%r" % (row,))
-
-                solution = someSolution(system, freeVariableValue=1)
-                E = Poly([solution[j] for j in range(e + 1)])
-                Q = Poly([solution[j] for j in range(e + 1, len(solution))])
-
-                if debug:
-                    print("\nreduced system is:\n\n")
-                    for row in system:
-                        print("\t%r" % (row,))
-
-                    print("solution is %r" % (solution,))
-                    print("Q is %r" % (Q,))
-                    print("E is %r" % (E,))
-
-                P, remainder = Q.__divmod__(E)
-                print(remainder.coeffs)
-                if remainder.isZero():
-                    return Q, E
-                raise Exception("found no divisors!")
-        else:
-            ENumVars = maxE + 1
-            QNumVars = maxE + k
+        due to Jeremy Kun
+        https://jeremykun.com/2015/09/07/welch-berlekamp/
+        """
+        for e in range(maxE, 0, -1):
+            print("\ne is %r" % e)
+            ENumVars = e + 1
+            QNumVars = e + k
 
             def row(i, a, b):
-                # the "extended" part of the linear system
-                return ([
-                    b * a**j for j in range(ENumVars)] +
-                    [-1 * a**j for j in range(QNumVars)] + [0])
+                return (
+                    [b * a**j for j in range(ENumVars)] +
+                    [-1 * a**j for j in range(QNumVars)] + [0]
+                ) # the "extended" part of the linear system
 
             system = (
                 [row(i, a, b) for (i, (a, b)) in enumerate(encodedMessage)] +
@@ -98,14 +103,14 @@ def makeEncoderDecoder(n, k, p):
             )  # ensure coefficient of x^e in E(x) is 1
 
             if debug:
-                print("\nmaxE is %r" % maxE)
+                print("\ne is %r" % e)
                 print("\nsystem is:\n\n")
                 for row in system:
                     print("\t%r" % (row,))
-
+                        
             solution = someSolution(system, freeVariableValue=1)
-            E = Poly([solution[j] for j in range(maxE + 1)])
-            Q = Poly([solution[j] for j in range(maxE + 1, len(solution))])
+            E = Poly([solution[j] for j in range(e + 1)])
+            Q = Poly([solution[j] for j in range(e + 1, len(solution))])
 
             if debug:
                 print("\nreduced system is:\n\n")
@@ -117,59 +122,35 @@ def makeEncoderDecoder(n, k, p):
                 print("E is %r" % (E,))
 
             P, remainder = Q.__divmod__(E)
-            print(remainder.coeffs)
+            if debug:
+                print("P(x) = %r" % P)
+                print("r(x) = %r" % remainder)
             if remainder.isZero():
                 return Q, E
-            raise Exception("found no divisors!")
+        raise Exception("found no divisors!")
 
-    def decode(encodedMessage, maxE, debug):
-        Q, E = solveSystem(encodedMessage, maxE, debug)
+    def decode(encodedMessage, debug=False):
+        assert(len(encodedMessage) == n)
+        c = sum(m is None for m in encodedMessage) # number of erasures
+        assert(t + 1 + c <= n)
+        e = (n - c - t - 1) // 2 # number of errors to correct
 
+        if debug:
+            print('n:', n, 'k:', k, 't:', t)
+            print('decoding with e:', e)
+            print('decoding with c:', c)
+
+        encM = [(point(i), m) for i,m in enumerate(encodedMessage) if m is not None]
+
+        if e == 0:
+            # decode with no errors
+            P = Poly.interpolate(encM)
+            return P.coeffs
+
+        Q, E = solveSystem(encM, maxE=e, debug=debug)
         P, remainder = Q.__divmod__(E)
-        if remainder != 0:
+        if not remainder.isZero():
             raise Exception("Q is not divisibly by E!")
-
-        return P.coefficients
+        return P.coeffs
 
     return encode, decode, solveSystem
-
-
-"""
-f: erasure
-"""
-
-
-def decoding_message_with_none_elements(f, encodedmsg, p):
-    # number of non-none elements in the message
-    nnone = 0
-    encodedmsg_drop_none = []
-    for i in encodedmsg:
-        if i[0] is not None and i[1] is not None:
-            nnone += 1
-            encodedmsg_drop_none.append(i)
-    assert(2*f + 1 <= nnone), "erasure too large, 2f + 1 > number of non-none elements!"
-
-    _, _, solveSystem = makeEncoderDecoder(nnone, f+1, p)
-    Q, E = solveSystem(encodedmsg_drop_none, False)
-    P, remainder = (Q.__divmod__(E))
-    # print("P(x) = %r" % P)
-    # print("r(x) = %r" % remainder)
-
-    num_matching = 0
-    evil_nodes = []
-    for i in range(len(encodedmsg)):
-        if encodedmsg[i][1] == P(encodedmsg[i][0]):
-            num_matching += 1
-        else:
-            # print("evil nodes!!!!!!!!!!")
-            # print(encodedmsg[i][0])
-            # print(P)
-            # print(encodedmsg[i][1])
-            # print(P(encodedmsg[i][0]))
-            evil_nodes.append(encodedmsg[i][0])
-
-    # assert(num_matching >= (2*f + 1)), "The decoded polynomial is not correct!"
-    if num_matching < (2*f + 1):
-        return False, None, evil_nodes
-    else:
-        return True, P, evil_nodes

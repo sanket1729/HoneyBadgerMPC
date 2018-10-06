@@ -65,7 +65,6 @@ def polynomialsOver(field):
             ONE = cls([1]) # This is the polynomial f(x) = 1
             xs, ys = zip(*shares)
             def lagrange(xi):
-                print('xs:',xs)
                 mul = lambda a,b: a*b
                 num = reduce(mul, [ X - cls([xj])  for xj in xs if xj != xi], ONE)
                 den = reduce(mul, [xi - xj  for xj in xs if xj != xi], field(1))
@@ -171,7 +170,6 @@ def polynomialsOver(field):
 
                 quotient += monomialDivisor
                 remainder -= monomialDivisor * divisor
-                print(remainder.coeffs)
 
             return quotient, remainder
 

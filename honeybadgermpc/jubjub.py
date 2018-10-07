@@ -2,8 +2,9 @@
 from .field import GF
 Field = GF(0x73eda753299d7d483339d80809a1d80553bda402fffe5bfeffffffff00000001)
 
+
 class Jubjub(object):
-    def __init__(self, a = Field(-1), d = -(Field(10240)/Field(10241))):
+    def __init__(self, a=Field(-1), d=-(Field(10240)/Field(10241))):
         self.a = a
         self.d = d
 

@@ -1,4 +1,9 @@
 from pytest import mark
+import pytest
+import asyncio
+
+def handle_async_exception(loop, ctx):
+    pytest.fail("Exception in async task: {0}".format(ctx['exception']))
 
 
 @mark.asyncio
@@ -9,8 +14,11 @@ async def test_open_shares(zeros_files_prefix, random_shares_files, triples_file
     honeybadgermpc.passive.random_files_prefix = zeros_files_prefix
     honeybadgermpc.passive.triples_files_prefix = triples_files_prefix
 
+    loop = asyncio.get_event_loop()
+    loop.set_exception_handler(handle_async_exception)
+    
     from honeybadgermpc.passive import runProgramAsTasks
-    N, t = 3, 2
+    N, t = 3, 1
     number_of_secrets = 100
 
     async def _prog(context):
@@ -37,8 +45,11 @@ async def test_beaver_mul_with_zeros(zeros_files_prefix, random_shares_files, tr
     honeybadgermpc.passive.random_files_prefix = zeros_files_prefix
     honeybadgermpc.passive.triples_files_prefix = triples_files_prefix
 
+    loop = asyncio.get_event_loop()
+    loop.set_exception_handler(handle_async_exception)    
+
     from honeybadgermpc.passive import runProgramAsTasks
-    N, t = 3, 2
+    N, t = 3, 1
     x_secret, y_secret = 10, 15
 
     async def _prog(context):
@@ -70,7 +81,7 @@ async def test_beaver_mul_with_zeros(zeros_files_prefix, random_shares_files, tr
 @mark.usefixtures('random_shares_files', 'triples_shares_files')
 async def test_beaver_mul(random_polys, random_files_prefix, triples_files_prefix):
     from honeybadgermpc.passive import runProgramAsTasks
-    N, t = 3, 2
+    N, t = 3, 1
     f, g = random_polys[:2]
     x_secret, y_secret = f(0), g(0)
 

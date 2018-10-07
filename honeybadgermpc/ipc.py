@@ -143,7 +143,7 @@ async def runProgramAsProcesses(program, config, t, id):
     context = PassiveMpc('sid', N, t, id, send, recv, program)
     results = await asyncio.ensure_future(context._run())
     await asyncio.sleep(1)
-    sender.close()
+    await sender.close()
     await listener.close()
     await asyncio.sleep(1)
     return results
@@ -152,6 +152,7 @@ async def runProgramAsProcesses(program, config, t, id):
 if __name__ == "__main__":
     from .passive import generate_test_zeros, generate_test_triples
     from .passive import test_prog1, test_prog2
+    import time
 
     # N - total number of parties
     # t - total number of corrupt parties
@@ -173,6 +174,7 @@ if __name__ == "__main__":
     try:
         config = {i: NodeDetails(prefix+str(i), port+i) for i in range(N)}
         loop.run_until_complete(runProgramAsProcesses(test_prog1, config, t, id))
-        loop.run_until_complete(runProgramAsProcesses(test_prog2, config, t, id))
+        #loop.run_until_complete(runProgramAsProcesses(test_prog2, config, t, id))
     finally:
+        for t in asyncio.all_tasks(loop): t.cancel()
         loop.close()

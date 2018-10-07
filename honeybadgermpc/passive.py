@@ -1,11 +1,11 @@
 import asyncio
 from asyncio import Future
+import random
 from .field import GF, GFElement
 from .polynomial import polynomialsOver
-from .jubjub import Point, Jubjub
 from .router import simple_router
-from .batch_reconstruction import batch_reconstruction
-import random
+from .robust_reconstruction import robust_reconstruct
+from collections import defaultdict
 
 
 class NotEnoughShares(Exception):
@@ -15,9 +15,11 @@ class NotEnoughShares(Exception):
 class BatchReconstructionFailed(Exception):
     pass
 
-zeros_files_prefix = None # 'sharedata/test_zeros'
-triples_files_prefix = None # 'sharedata/test_triples'
-random_files_prefix = None #'sharedata/test_random'
+
+zeros_files_prefix = 'sharedata/test_zeros'
+triples_files_prefix = 'sharedata/test_triples'
+random_files_prefix = 'sharedata/test_random'
+
 
 class PassiveMpc(object):
 
@@ -42,12 +44,16 @@ class PassiveMpc(object):
         # So the protocol must encounter the shares in the same order.
         self.prog = prog
 
-        # Store deferreds representing SharedValues
-        self._openings = []
+        # A task representing the opened values
+        # { shareid => Future (field list(field)) }
+        self._openings = {}
 
         # Store opened shares until ready to reconstruct
-        # shareid => { [playerid => share] }
-        self._share_buffers = tuple([] for _ in range(N))
+        # playerid => { [shareid => Future share] }
+        self._share_buffers = tuple(defaultdict(asyncio.Future) for _ in range(N))
+
+        # TODO: used pruned shares to clear this dict
+        self._pruned_shares = 0
 
         self.Share, self.ShareArray = shareInContext(self)
 
@@ -61,39 +67,7 @@ class PassiveMpc(object):
         filename = f'{triples_files_prefix}-{self.myid}.share'
         self._triples = iter(self.read_shares(open(filename)))
 
-    def _reconstruct(self, shareid):
-        # Are there enough shares to reconstruct?
-        shares = [(i+1, self._share_buffers[i][shareid])
-                  for i in range(self.N)
-                  if len(self._share_buffers[i]) > shareid]
-        if len(shares) < self.t+1:
-            raise NotEnoughShares
-
-        # print('[%d] reconstruct %s' % (self.myid, shareid,))
-
-        if not self._openings[shareid].done():
-            s = Poly.interpolate_at(shares)
-            # Set the result on the future representing this share
-            self._openings[shareid].set_result(s)
-
-    def open_share(self, share):
-        opening = asyncio.Future()
-        shareid = len(self._openings)
-        self._openings.append(opening)
-
-        # Broadcast share
-        for j in range(self.N):
-            self.send(j, (shareid, share.v))
-
-        # Reconstruct if we already had enough shares
-        try:
-            self._reconstruct(shareid)
-        except NotEnoughShares:
-            pass
-
-        # Return future
-        return opening
-
+    ### Access to preprocessing data
     def get_triple(self):
         a = next(self._triples)
         b = next(self._triples)
@@ -109,40 +83,125 @@ class PassiveMpc(object):
     def get_bit(self):
         return next(self._bits)
 
+    async def open_share(self, share):
+        # Choose the shareid based on the order this is called
+        shareid = len(self._openings)
+
+        # Broadcast share
+        for j in range(self.N):
+            # 'S' is for single shares
+            self.send(j, ('S', shareid, share.v))
+
+        # Set up the buffer of received shares
+        share_buffer = [self._share_buffers[i][shareid] for i in range(self.N)]
+        point = lambda i: Field(i+1)
+        opening = robust_reconstruct(share_buffer, Field, self.N, self.t, point)
+        self._openings[shareid] = opening
+        P, failures = await opening
+        return P(Field(0))
+
+    async def open_share_array(self, sharearray):
+        # Choose the shareid based on the order this is called
+        from math import ceil
+        shareid = len(self._openings)
+        print('opening sharearray:', len(sharearray))        
+
+        # Divide the sharearray into batches of t+1
+        t = context.t
+        N = context.N
+        B = len(sharearray)
+        tasks = []
+        sends = []
+        recvs = []
+        for i in range(ceil(B / (t + 1))):
+            shared_secrets = [
+                sharearray[i*(t + 1) + j].v for j in range(t + 1)
+            ]
+
+            # We'll wait to receive between 2t+1 shares
+            round1_shares = [asyncio.Future() for _ in range(n)]
+
+            # We'll 
+            round2_shares = [asyncio.Future() for _ in range(n)]
+            
+            task = batch_reconstruction(shared_secrets, p, t, N, context.myid, sends[i], recvs[i], True)
+            tasks.append(task)
+            # construct openpoly in to field elements
+            
+            # Set up the buffer of received shares
+            share_buffer = [self._share_buffers[i][shareid] for i in range(self.N)]
+            point = lambda i: Field(i+1)
+            opening = batch_reconstruct(share_buffer, Field, self.N, self.t, point)
+            self._openings[shareid] = opening
+            P, failures = await opening
+            return P(Field(0))
+
+    async def _opener(self):
+        # Wait for all the openings
+        pending = set()
+        nextone = asyncio.create_task(self._newopening.get())
+        pending.add(nextone)
+        try:
+          while True:
+            done, pending = await asyncio.wait(pending,
+                                               return_when=asyncio.FIRST_COMPLETED)
+            e = done.pop().exception()
+            if e:
+                print('opener caught exception:', e)
+                raise e
+            if nextone.done():
+                pending.add(nextone.result())
+                nextone = asyncio.create_task(self._newopening.get())
+                pending.add(nextone)
+        finally:
+            for p in pending: p.cancel()
+            nextone.cancel()
+
     async def _run(self):
         # Run receive loop as background task, until self.prog finishes
-        loop = asyncio.get_event_loop()
-        bgtask = loop.create_task(self._recvloop())
-
-        def handle_result(future):
-            if not future.cancelled() and future.exception():
-                # Stop the loop otherwise the loop continues to await for the prog to
-                # finish which will never happen since the recvloop has terminated.
-                loop.stop()
-                future.result()
-        bgtask.add_done_callback(handle_result)
-        res = await self.prog(self)
-        bgtask.cancel()
-        return res
+        # Cancel the background task, even if there's an exception
+        bgtask = asyncio.create_task(self._recvloop())
+        self._newopening = asyncio.Queue()
+        opener_task = asyncio.create_task(self._opener())
+        result = asyncio.create_task(self.prog(self))
+        await asyncio.wait((opener_task, bgtask, result), return_when=asyncio.FIRST_COMPLETED)
+        if result.done():
+            opener_task.cancel()
+            bgtask.cancel()
+            return result.result()
+        else:
+            if opener_task.done():
+                print('opener exception:',opener_task.exception())
+                raise opener_task.exception()
+            if bgtask.done():
+                print('bgtask exception:',bgtask.exception())
+                raise bgtask.exception()
+            opener_task.cancel()
+            bgtask.cancel()
+            await result
 
     async def _recvloop(self):
         while True:
-            (j, (shareid, share)) = await self.recv()
+            (j, (tag, shareid, share)) = await self.recv()
             buf = self._share_buffers[j]
 
+            # Sort into single or batch
+            if tag == 'S':
+                assert type(share) is GFElement, "?"
+
+            elif tag == 'B':
+                assert type(share) is list
+
             # Shareid is redundant, but confirm it is one greater
-            assert shareid == len(buf), "shareid: %d, len: %d" % (shareid, len(buf))
-            buf.append(share)
+            # than the max in buffer
+            prev = max(self._pruned_shares-1, max(buf.keys(), default=-1))
+            if shareid not in buf:
+                assert shareid == prev + 1
+                assert not buf[shareid].done()
 
-            # Reconstruct if we now have enough shares,
-            # and if the opening has been asked for
-            if len(self._openings) > shareid:
-                try:
-                    self._reconstruct(shareid)
-                except NotEnoughShares:
-                    pass
-
+            buf[shareid].set_result(share)
         return True
+
 
     # File I/O
     def read_shares(self, f):
@@ -209,8 +268,6 @@ def shareInContext(context):
         def __init__(self, v):
             # v is the local value of the share
             if type(v) is int:
-                #for the purpose of calling batch reconstruction, might need to refactor in the future
-                self.v_int = v
                 v = Field(v)
             assert type(v) is GFElement
             self.v = v
@@ -218,9 +275,10 @@ def shareInContext(context):
         # Publicly reconstruct a shared value
         def open(self):
             res = GFElementFuture()
-
             def cb(f): return res.set_result(f.result())
-            context.open_share(self).add_done_callback(cb)
+            opening = asyncio.ensure_future(context.open_share(self))
+            #context._newopening.put_nowait(opening)
+            opening.add_done_callback(cb)
             return res
 
         # Linear combinations of shares can be computed directly
@@ -248,7 +306,6 @@ def shareInContext(context):
 
         def __str__(self): return '{%d}' % (self.v)
 
-
     def _binopShare(fut, other, op):
         assert type(other) in [ShareFuture, GFElementFuture, Share, GFElement]
         res = ShareFuture()
@@ -270,11 +327,9 @@ def shareInContext(context):
         def __mul__(self, other): return _binopShare(
             self, other, lambda a, b: a * b)
 
-        def open(self) -> GFElementFuture:
+        def open(self):
             res = GFElementFuture()
-
             def cb2(sh): return res.set_result(sh.result())
-
             def cb1(_): return self.result().open().add_done_callback(cb2)
             self.add_done_callback(cb1)
             return res
@@ -287,39 +342,12 @@ def shareInContext(context):
             self._shares = shares
 
         async def open(self):
-            # Returns a list of field elements
-            # TODO: replace with batch recpub
-            # async def batch_reconstruction(shared_secrets, p, t, n, myid, send, recv, debug):
-            length = len(self._shares)
-            results = []
-            if length < (context.t + 1):
-                raise NotEnoughShares
-            # shares_copy = [share for share in self._shares]
-            tmp = length % (context.t + 1)
-            if tmp != 0:
-                for i in range((context.t + 1) - tmp):
-                    self._shares.append(self._shares[length - 1])
-            assert len(self._shares) % (context.t + 1) == 0
-            for i in range(len(self._shares) // (context.t + 1)):
-                # shared_secrets = []
-                # for j in range(self.t + 1):
-                #     shared_secrets.append(self._shares[i*(self.t + 1)+j].v_int)
-                shared_secrets = [self._shares[i*(context.t + 1)+j].v_int for j in range(context.t + 1)]
-                Solved, opened_poly, evil_ndoes = await batch_reconstruction(shared_secrets, p, context.N, context.t, context.myid, context.send, context.recv, True)
-                #construct openpoly in to field elements
-                if Solved:
-                    # coeffs = opened_poly.coeffs
-                    # for result in coeffs:
-                    #     results.append([field(result)])
-                    results.extend([Field(coeff) for coeff in opened_poly.coeffs])
-                else:
-                    raise BatchReconstructionFailed
-                    # continue
-                #record evil nodes
-                #do another batch
-                #return
-
-            return results
+            res = GFElementFuture()
+            def cb(f): return res.set_result(f.result())
+            opening = asyncio.create_task(context.open_share(self))
+            #context._newopening.put_nowait(opening)
+            opening.add_done_callback(cb)
+            return res
 
         def __add__(self, other): raise NotImplemented
 
@@ -335,16 +363,18 @@ def shareInContext(context):
 
 # Create a fake network with N instances of the program
 async def runProgramAsTasks(program, N, t):
-    loop = asyncio.get_event_loop()
     sends, recvs = simple_router(N)
 
     tasks = []
     # bgtasks = []
     for i in range(N):
         context = PassiveMpc('sid', N, t, i, sends[i], recvs[i], program)
-        tasks.append(loop.create_task(context._run()))
+        tasks.append(asyncio.create_task(context._run()))
 
-    results = await asyncio.gather(*tasks)
+    try:
+        results = await asyncio.gather(*tasks)
+    finally:
+        for t in tasks: t.cancel()
     return results
 
 
@@ -355,7 +385,8 @@ async def runProgramAsTasks(program, N, t):
 # p as an integer for calling batch_reconstruction
 p = 0x73eda753299d7d483339d80809a1d80553bda402fffe5bfeffffffff00000001
 # Fix the field for now
-Field = GF.get(0x73eda753299d7d483339d80809a1d80553bda402fffe5bfeffffffff00000001)
+Field = GF.get(
+    0x73eda753299d7d483339d80809a1d80553bda402fffe5bfeffffffff00000001)
 Poly = polynomialsOver(Field)
 
 
@@ -409,6 +440,8 @@ async def test_prog1(context):
 
     D = (x - a).open()
     E = (y - b).open()
+    await D
+    await E
 
     # This is a random share of x*y
     print('type(D):', type(D))
@@ -423,6 +456,14 @@ async def test_prog1(context):
 
     print("[%d] Finished" % (context.myid,), X, Y, XY)
 
+
+async def test_batchopening(context):
+
+    # Demonstrates use of ShareArray batch interface
+    xs = [context.get_zero() + context.Share(i) for i in range(100)]
+    xs = context.ShareArray(xs)
+    Xs = await xs.open()
+    print("[%d] Finished batch opening" % (context.myid,))
 
 async def test_batchbeaver(context):
 
@@ -456,6 +497,7 @@ async def test_batchbeaver(context):
 
 # Read zeros from file, open them
 
+
 async def test_batchjubjub(context):
 
     def mul(x, y):
@@ -471,16 +513,21 @@ async def test_batchjubjub(context):
 
     # ShareArray batch addition of points on jubjub
 
-    p1 = Point(0,1)
-    p2 = Point(5, 6846412461894745224441235558443359243034138132682534265960483512729196124138)
-    p3 = Point(10, 9069365299349881324022309154395348339753339814197599672892180073931980134853)
-    p4 = Point(20, 19591689915777126424527574975649725331665833659101192930707046924393354292087)
-    p5 = Point(21, 7077199607858622853608570958787827897736274549921838431359778037825087697958)
-    p6 = Point(28, 6872713299796450981547816838430986612693130632041108310621050902354381807248)
+    p1 = Point(0, 1)
+    p2 = Point(
+        5, 6846412461894745224441235558443359243034138132682534265960483512729196124138)
+    p3 = Point(
+        10, 9069365299349881324022309154395348339753339814197599672892180073931980134853)
+    p4 = Point(
+        20, 19591689915777126424527574975649725331665833659101192930707046924393354292087)
+    p5 = Point(
+        21, 7077199607858622853608570958787827897736274549921838431359778037825087697958)
+    p6 = Point(
+        28, 6872713299796450981547816838430986612693130632041108310621050902354381807248)
 
     s1 = [p1, p2, p3]
     s2 = [p4, p5, p6]
-    s3 = [] # for assertion with opened value
+    s3 = []  # for assertion with opened value
 
     for p, q in zip(s1, s2):
         s3.append(p + q)
@@ -560,7 +607,6 @@ async def test_prog3(context):
         rx = await (await mul(_r, x)).open()
         return (1/rx) * _r
 
-
     P = Point(Field(0x18ea85ca00cb9d895cb7b8669baa263fd270848f90ebefabe95b38300e80bde1),
               Field(0x255fa75b6ef4d4e1349876df94ca8c9c3ec97778f89c0c3b2e4ccf25fdf9f7c1))
     Q = Point(Field(0x1624451837683b2c4d2694173df71c9174ffcc613788eef3a9c7a7d0011476fa),
@@ -572,7 +618,6 @@ async def test_prog3(context):
     y1 = context.get_zero() + context.Share(P.y)
     x2 = context.get_zero() + context.Share(Q.x)
     y2 = context.get_zero() + context.Share(Q.y)
-
 
     dx1x2y1y2 = P.curve.d * await mul(await mul(x1, x2), await mul(y1, y2))
     x3num = (await mul(x1, y2) + await mul(y1, x2))
@@ -590,20 +635,20 @@ async def test_prog3(context):
 # Run some test cases
 if __name__ == '__main__':
     print('Generating random shares of zero in sharedata/')
-    generate_test_zeros('sharedata/test_zeros', 1000, 3, 2)
+    generate_test_zeros('sharedata/test_zeros', 1000, 3, 1)
     print('Generating random shares in sharedata/')
-    generate_test_randoms('sharedata/test_random', 1000, 3, 2)
+    generate_test_randoms('sharedata/test_random', 1000, 3, 1)
     print('Generating random shares of triples in sharedata/')
-    generate_test_triples('sharedata/test_triples', 1000, 3, 2)
+    generate_test_triples('sharedata/test_triples', 1000, 3, 1)
 
     asyncio.set_event_loop(asyncio.new_event_loop())
     loop = asyncio.get_event_loop()
     loop.set_debug(True)
     try:
-        loop.run_until_complete(runProgramAsTasks(test_prog1, 3, 2))
-        loop.run_until_complete(runProgramAsTasks(test_prog2, 3, 2))
-        loop.run_until_complete(runProgramAsTasks(test_prog3, 3, 2))
-        loop.run_until_complete(runProgramAsTasks(test_batchbeaver, 3, 2))
-        loop.run_until_complete(runProgramAsTasks(test_batchjubjub, 3, 2))
+        loop.run_until_complete(runProgramAsTasks(test_prog1, 3, 1))
+        loop.run_until_complete(runProgramAsTasks(test_prog2, 3, 1))
+        #loop.run_until_complete(runProgramAsTasks(test_prog3, 3, 1))
+        #loop.run_until_complete(runProgramAsTasks(test_batchbeaver, 3, 1))
+        #loop.run_until_complete(runProgramAsTasks(test_batchjubjub, 3, 2))
     finally:
         loop.close()

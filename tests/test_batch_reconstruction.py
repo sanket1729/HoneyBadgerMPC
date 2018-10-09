@@ -5,7 +5,7 @@ import random
 from honeybadgermpc.wb_interpolate import makeEncoderDecoder
 from honeybadgermpc.field import GF
 from honeybadgermpc.polynomial import polynomialsOver
-from honeybadgermpc.batch_reconstruction import batch_reconstruction
+from honeybadgermpc.batch_reconstruction import batch_reconstruct
 from honeybadgermpc.router import simple_router
 
 order = q = 17
@@ -13,11 +13,18 @@ order = q = 17
 def random_element():
     return random.randint(0, order)
 
+def handle_async_exception(loop, ctx):
+    print('handle_async_exception:', ctx)
+    pytest.fail("Exception in async task: {0}".format(ctx['exception']))
+
 @mark.asyncio
 async def test():
     N = 4
     p = 73
     t = 1
+
+    loop = asyncio.get_event_loop()
+    #loop.set_exception_handler(handle_async_exception)
 
     # Test with simple case: n = 4, t =1
     # After AVSS, poly1 = x + 2, poly2 = 3x + 4, secret1 = 2, secret2 = 4
@@ -33,8 +40,8 @@ async def test():
     towait = []    
     for i in range(N):
         ss = shared_secrets[i]
-        towait.append(batch_reconstruction(ss, p, t, N, i,
-                                           sends[i], recvs[i], False))
+        towait.append(batch_reconstruct(ss, p, t, N, i,
+                                        sends[i], recvs[i], False))
     results = await asyncio.gather(*towait)
     for r in results:
         assert r == [2,4]
@@ -45,8 +52,8 @@ async def test():
     for i in range(N):
         ss = shared_secrets[i]
         if i == 2: ss = (0,0) # add an error
-        towait.append(batch_reconstruction(ss, p, t, N, i,
-                                           sends[i], recvs[i], False))
+        towait.append(batch_reconstruct(ss, p, t, N, i,
+                                        sends[i], recvs[i], False))
     results = await asyncio.gather(*towait)
     for r in results:
         assert r == [2,4]
@@ -58,10 +65,13 @@ async def test():
         ss = shared_secrets[i]
         if i == 2: continue # skip this node
         if i == 3: ss = (0,0) # add an error
-        towait.append(batch_reconstruction(ss, p, t, N, i,
-                                           sends[i], recvs[i], False))
+        towait.append(batch_reconstruct(ss, p, t, N, i,
+                                        sends[i], recvs[i], False))
     with pytest.raises(asyncio.TimeoutError):
         results = await asyncio.wait_for(asyncio.gather(*towait), timeout=1)
+
+    loop.set_exception_handler(None)
+    loop.close()
             
 if __name__ == '__main__':
     try:

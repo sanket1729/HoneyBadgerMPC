@@ -1,9 +1,163 @@
 import asyncio
 from .field import GF
 from .polynomial import polynomialsOver
-from .robust_reconstruction import robust_reconstruct
+from .robust_reconstruction import attempt_reconstruct, waitFor, robust_reconstruct
+from collections import defaultdict
+from asyncio import Queue
+from math import ceil
 
-async def batch_reconstruction(shared_secrets, p, t, n, myid, send, recv, debug):
+
+async def waitFor(aws, to_wait):
+    # waits for at least number `to_wait` out of the aws
+    # coroutines to finish, returning None for all the ones
+    # not finished yet
+    aws = list(map(asyncio.ensure_future, aws))
+    done, pending = set(), set(aws)
+    while len(done) < to_wait:
+        _d, pending = await asyncio.wait(pending,
+                            return_when=asyncio.FIRST_COMPLETED)
+        done |= _d
+    result = [await d if d in done else None for d in aws]
+    return result
+
+
+def subscribeRecv(recv):
+    tagTable = defaultdict(Queue)
+    taken = set() # Replace this with a bloom filter?
+
+    async def _recvLoop():
+        while True:
+            j, (tag, o) = await recv()
+            print('recv:', (j, tag, o))
+            tagTable[tag].put_nowait((j, o))
+
+    def subscribe(tag):
+        # take everything from the queue
+        # further things sent directly
+        assert tag not in taken
+        taken.add(tag)
+        return tagTable[tag].get
+
+    asyncio.create_task(_recvLoop())
+    return subscribe
+
+
+def recvEachParty(recv, n):
+    queues = [Queue() for _ in range(n)]
+
+    async def _recvLoop():
+        while True:
+            j, o = await recv()
+            print('recvEachParty', j, o)
+            queues[j].put_nowait(o)
+
+    asyncio.create_task(_recvLoop())
+    return [q.get for q in queues]
+
+
+def wrapSend(tag, send):
+    def _send(j, o):
+        send(j, (tag, o))
+    return _send
+
+
+def toChunks(data, chunkSize):
+    res = []
+    n_chunks = ceil(len(data) / chunkSize)
+    print('toChunks:', chunkSize, len(data), n_chunks)
+    for j in range(n_chunks):
+        start = chunkSize * j
+        stop  = chunkSize * (j + 1)
+        res.append(data[start:stop])
+    return res
+
+
+def attempt_reconstruct_batch(data, field, n, t, point):
+    assert len(data) == n
+    assert sum(f is not None for f in data) >= 2 * t + 1
+    assert 2*t < n, "Robust reconstruct waits for at least n=2t+1 values"
+
+    Bs = [len(f) for f in data if f is not None]
+    n_chunks = Bs[0]
+    assert all(b == n_chunks for b in Bs)
+    recons = []
+    for i in range(n_chunks):
+        chunk = [d[i] if d is not None else None for d in data]
+        try:
+            P, failures = attempt_reconstruct(chunk, field, n, t, point)
+            recon = P.coeffs
+            recon += [0] * (t + 1 - len(recon))
+            recons += recon
+        except ValueError as e:
+            if str(e) in ("Wrong degree", "no divisors found"):
+                # TODO: return partial success, keep tracking of failures
+                return None
+            raise
+    return recons
+
+
+async def batch_reconstruct(elem_batches, p, t, n, myid, send, recv, debug=False):
+    Fp = field = GF.get(p)
+    Poly = polynomialsOver(Fp)
+
+    def point(i): return Fp(i+1)  # TODO: make it use omega
+
+    subscribe = subscribeRecv(recv)
+    del recv # ILC enforces this in type system, no duplication of reads
+    dataR1 = [asyncio.create_task(recv()) for recv in recvEachParty(subscribe('R1'), n)]
+    dataR2 = [asyncio.create_task(recv()) for recv in recvEachParty(subscribe('R2'), n)]
+    del subscribe # ILC should determine we can garbage collect after this
+
+    def sendBatch(data, send, point):
+        print('sendBatch data:', data)
+        toSend = [[] for _ in range(n)]
+        for chunk in toChunks(data, t + 1):
+            f_poly = Poly(chunk)
+            for j in range(n):
+                toSend[j].append(f_poly(point(j)))
+        print('batch to send:', toSend)
+        for j in range(n):
+            send(j, toSend[j])
+
+    # Step 1: Compute the polynomial, then send
+    #  Evaluate and send f(j,i) for each other participating party Pj
+    sendBatch(elem_batches, wrapSend('R1', send), point)
+    
+    # Step 2: Attempt to reconstruct P1
+    # Wait for between 2t+1 values and N values
+    # trying to reconstruct each time
+    for nAvailable in range(2 * t + 1, n + 1):
+        data = await waitFor(dataR1, nAvailable)
+        print('data R1:', data)
+        reconsR2 = attempt_reconstruct_batch(data, field, n, t, point)
+        if reconsR2 is None:
+            # TODO: return partial success, so we can skip these next turn
+            continue
+        break
+    assert nAvailable <= n, "reconstruction failed"
+    print('reconsR2:', reconsR2)
+    assert len(reconsR2) >= len(elem_batches)
+    reconsR2 = reconsR2[:len(elem_batches)]
+        
+    # Step 3: Send R2 points
+    sendBatch(reconsR2, wrapSend('R2', send), lambda _: Fp(0))
+
+    # Step 4: Attempt to reconstruct R2
+    for nAvailable in range(nAvailable, n + 1):
+        data = await waitFor(dataR2, nAvailable)
+        reconsP = attempt_reconstruct_batch(data, field, n, t, point)
+        if reconsP is None:
+            # TODO: return partial success, so we can skip these next turn
+            continue
+        break
+    assert nAvailable <= n, "reconstruction failed"
+    assert len(reconsP) >= len(elem_batches)
+    reconsP = reconsP[:len(elem_batches)]
+
+    return reconsP
+    
+
+async def batch_reconstruct_one(shared_secrets, p, t, n, myid, send, recv, debug):
     """
     args:
       shared_secrets: an array of points representing shared secrets S1 - St+1
@@ -18,7 +172,7 @@ async def batch_reconstruction(shared_secrets, p, t, n, myid, send, recv, debug)
     Communication takes place over two rounds,
       objects sent/received of the form ('R1', share) or ('R2', share)
       up to one of each for each party
-"""
+    """
 
     if debug:
         print("my id %d" % myid)

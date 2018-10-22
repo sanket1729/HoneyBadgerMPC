@@ -53,6 +53,11 @@ class PassiveMpc(object):
         # playerid => { [shareid => Future share] }
         self._share_buffers = tuple(defaultdict(asyncio.Future) for _ in range(N))
 
+        # Batch reconstruction is handled slightly differently,
+        # We'll create a separate queue for received values
+        # { shareid => Queue() }
+        self._sharearray_buffers = defaultdict(asyncio.Queue)
+
         # TODO: used pruned shares to clear this dict
         self._pruned_shares = 0
 
@@ -105,38 +110,14 @@ class PassiveMpc(object):
         # Choose the shareid based on the order this is called
         from math import ceil
         shareid = len(self._openings)
-        print('opening sharearray:', len(sharearray._shares))
 
-        # Divide the sharearray into batches of t+1
-        t = self.t
-        N = self.N
-        B = len(sharearray._shares)
-        tasks = []
-        sends = []
-        recvs = []
-        for i in range(ceil(B / (t + 1))):
-            shared_secrets = [
-                sharearray._shares[i*(t + 1) + j].v for j in range(t + 1)
-            ]
-
-             # # We'll wait to receive between 2t+1 shares
-            # round1_shares = [asyncio.Future() for _ in range(n)]
-
-            # # We'll
-            # round2_shares = [asyncio.Future() for _ in range(n)]
-
-            task = await batch_reconstruct(shared_secrets, p, t, N, self.myid, self.send, self.recv, False)
-            tasks.append(task)
-            # construct openpoly in to field elements
-
-            # Set up the buffer of received shares
-            # share_buffer = [self._share_buffers[i][shareid] for i in range(self.N)]
-            # point = lambda i: Field(i+1)
-            # opening = batch_reconstruct(share_buffer, Field, self.N, self.t, point)
-            # self._openings[shareid] = opening
-            # P, failures = await opening
-            print(task)
-        return P(Field(0))
+        def _send(j, o):
+            (tag, share) = o
+            self.send(j, (tag, shareid, share))
+        _recv = self._sharearray_buffers[shareid].get
+        opening = batch_reconstruct([s.v for s in sharearray._shares], Field.modulus, self.t, self.N, self.myid, _send, _recv, debug=True)
+        self._openings[shareid] = opening
+        return await opening
 
     async def _opener(self):
         # Wait for all the openings
@@ -185,25 +166,29 @@ class PassiveMpc(object):
     async def _recvloop(self):
         while True:
             (j, (tag, shareid, share)) = await self.recv()
-            buf = self._share_buffers[j]
 
             # Sort into single or batch
             if tag == 'S':
                 assert type(share) is GFElement, "?"
+                buf = self._share_buffers[j]
 
-            elif tag == 'B':
+                # Assert there is not an R1 or R2 value either
+                assert shareid not in self._sharearray_buffers
+
+                # Assert that there is not an element already
+                assert not buf[shareid].done(), "Received a redundant share: %o" % shareid
+                buf[shareid].set_result(share)
+
+            elif tag in ('R1','R2'):
                 assert type(share) is list
 
-            # Shareid is redundant, but confirm it is one greater
-            # than the max in buffer
-            prev = max(self._pruned_shares-1, max(buf.keys(), default=-1))
-            if shareid not in buf:
-                assert shareid == prev + 1
-                assert not buf[shareid].done()
+                # Assert there is not an 'S' value here
+                assert shareid not in self._share_buffers[j]
 
-            buf[shareid].set_result(share)
+                # Forward to the right queue
+                self._sharearray_buffers[shareid].put_nowait((j, (tag, share)))
+
         return True
-
 
     # File I/O
     def read_shares(self, f):
@@ -343,8 +328,10 @@ def shareInContext(context):
                 assert type(share) is Share
             self._shares = shares
 
-        async def open(self):
-            res = GFElementFuture()
+        def open(self):
+            # TODO: make a list of GFElementFutures?
+            # res = GFElementFuture()
+            res = Future()
             def cb(f): return res.set_result(f.result())
             opening = asyncio.create_task(context.open_share_array(self))
             #context._newopening.put_nowait(opening)
@@ -582,7 +569,7 @@ async def test_prog2(context):
     # Batch version
     arr = context.ShareArray(shares[:100])
     for s in await arr.open():
-        assert s == 0
+        assert s == 0, s
     print('[%d] Finished batch' % (context.myid,))
 
 
@@ -634,6 +621,9 @@ async def test_prog3(context):
     assert X3 == R.x and Y3 == R.y
 
 
+def handle_async_exception(loop, ctx):
+    print('handle_async_exception:', ctx)
+
 # Run some test cases
 if __name__ == '__main__':
     print('Generating random shares of zero in sharedata/')
@@ -645,6 +635,7 @@ if __name__ == '__main__':
 
     asyncio.set_event_loop(asyncio.new_event_loop())
     loop = asyncio.get_event_loop()
+    # loop.set_exception_handler(handle_async_exception)
     loop.set_debug(True)
     try:
         # loop.run_until_complete(runProgramAsTasks(test_prog1, 3, 1))

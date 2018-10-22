@@ -28,7 +28,6 @@ def subscribeRecv(recv):
     async def _recvLoop():
         while True:
             j, (tag, o) = await recv()
-            print('recv:', (j, tag, o))
             tagTable[tag].put_nowait((j, o))
 
     def subscribe(tag):
@@ -48,7 +47,6 @@ def recvEachParty(recv, n):
     async def _recvLoop():
         while True:
             j, o = await recv()
-            print('recvEachParty', j, o)
             queues[j].put_nowait(o)
 
     asyncio.create_task(_recvLoop())
@@ -64,7 +62,7 @@ def wrapSend(tag, send):
 def toChunks(data, chunkSize):
     res = []
     n_chunks = ceil(len(data) / chunkSize)
-    print('toChunks:', chunkSize, len(data), n_chunks)
+    # print('toChunks:', chunkSize, len(data), n_chunks)
     for j in range(n_chunks):
         start = chunkSize * j
         stop  = chunkSize * (j + 1)
@@ -109,13 +107,13 @@ async def batch_reconstruct(elem_batches, p, t, n, myid, send, recv, debug=False
     del subscribe # ILC should determine we can garbage collect after this
 
     def sendBatch(data, send, point):
-        print('sendBatch data:', data)
+        # print('sendBatch data:', data)
         toSend = [[] for _ in range(n)]
         for chunk in toChunks(data, t + 1):
             f_poly = Poly(chunk)
             for j in range(n):
                 toSend[j].append(f_poly(point(j)))
-        print('batch to send:', toSend)
+        # print('batch to send:', toSend)
         for j in range(n):
             send(j, toSend[j])
 
@@ -128,14 +126,14 @@ async def batch_reconstruct(elem_batches, p, t, n, myid, send, recv, debug=False
     # trying to reconstruct each time
     for nAvailable in range(2 * t + 1, n + 1):
         data = await waitFor(dataR1, nAvailable)
-        print('data R1:', data)
+        # print('data R1:', data)
         reconsR2 = attempt_reconstruct_batch(data, field, n, t, point)
         if reconsR2 is None:
             # TODO: return partial success, so we can skip these next turn
             continue
         break
     assert nAvailable <= n, "reconstruction failed"
-    print('reconsR2:', reconsR2)
+    # print('reconsR2:', reconsR2)
     assert len(reconsR2) >= len(elem_batches)
     reconsR2 = reconsR2[:len(elem_batches)]
         

@@ -1,0 +1,79 @@
+import cProfile, pstats, io
+from pstats import SortKey
+from honeybadgermpc.robust_reconstruction import attempt_reconstruct
+from honeybadgermpc.field import GF
+from honeybadgermpc.polynomial import polynomialsOver
+from honeybadgermpc.wb_interpolate import makeEncoderDecoder
+from random import randint
+import sys
+sys.stdout = open('tests/bench_marking_stats.txt', 'w')
+
+
+
+# def encode(message):
+#     if not all(x < p for x in message):
+#         raise Exception(
+#             "Message is improperly encoded as integers < p. It was:\n%r" % message)
+#     assert len(message) == t + 1
+
+#     thePoly = Poly(message)
+#     return [thePoly(point(i)) for i in range(n)]
+# p = 73
+
+def generate_test(n, t, p):
+
+    enc, _, _ = makeEncoderDecoder(n, t+1, p)
+    Fp = GF.get(p)
+
+    def point(i): return Fp(i+1)
+
+    integerMessage = [randint(0, p-1) for i in range(t+1)]
+    encoded = enc(integerMessage)
+
+    return encoded, Fp, point
+
+
+n = 4
+t = 1
+p = 73
+encoded, field, point = generate_test(n, t, p)
+# cProfile.run('attempt_reconstruct()')
+# attempt_reconstruct(encoded, field, n, t, point):
+cp = cProfile.Profile()
+cp.enable()
+attempt_reconstruct(encoded, field, n, t, point)
+cp.disable()
+# cp.print_stats()
+print("Test n = {}, t = {}, field = {}".format(n, t, p))
+p = pstats.Stats(cp)
+p.strip_dirs().sort_stats(SortKey.CUMULATIVE, SortKey.TIME).print_stats(.5)
+
+n = 22
+t = 10
+p = 73
+encoded, field, point = generate_test(n, t, p)
+# cProfile.run('attempt_reconstruct()')
+# attempt_reconstruct(encoded, field, n, t, point):
+cp = cProfile.Profile()
+cp.enable()
+attempt_reconstruct(encoded, field, n, t, point)
+cp.disable()
+# cp.print_stats()
+print("Test n = {}, t = {}, field = {}".format(n, t, p))
+p = pstats.Stats(cp)
+p.strip_dirs().sort_stats(SortKey.CUMULATIVE, SortKey.TIME).print_stats(.5)
+# stream.close()
+n = 50
+t = 16
+p = 73
+encoded, field, point = generate_test(n, t, p)
+# cProfile.run('attempt_reconstruct()')
+# attempt_reconstruct(encoded, field, n, t, point):
+cp = cProfile.Profile()
+cp.enable()
+attempt_reconstruct(encoded, field, n, t, point)
+cp.disable()
+# cp.print_stats()
+print("Test n = {}, t = {}, field = {}".format(n, t, p))
+p = pstats.Stats(cp)
+p.strip_dirs().sort_stats(SortKey.CUMULATIVE, SortKey.TIME).print_stats(.5)

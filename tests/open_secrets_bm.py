@@ -23,7 +23,7 @@ p = 0x73eda753299d7d483339d80809a1d80553bda402fffe5bfeffffffff00000001
 #     return [thePoly(point(i)) for i in range(n)]
 # p = 73
 
-def generate_test(n, t, p, k=1000):
+def generate_test(n, t, p, k=10000):
 
     enc, _, _ = makeEncoderDecoder(n, t+1, p)
     Fp = GF.get(p)

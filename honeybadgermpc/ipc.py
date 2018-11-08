@@ -9,6 +9,16 @@ from .passive import PassiveMpc
 from .program_runner import ProgramRunner
 
 
+async def robust_open_connection(host, port):
+    backoff = 1
+    for tries in range(5):
+        try:
+            return await asyncio.open_connection(host, port)
+        except ConnectionRefusedError:
+            print('backing off:', backoff, 'seconds')
+            await asyncio.sleep(backoff)
+            backoff *= 2
+
 class Senders(object):
     def __init__(self, queues, config, nodeid):
         self.queues = queues
@@ -39,7 +49,7 @@ class Senders(object):
                 break
         # XXX END temporary hack
 
-        streams = [asyncio.open_connection(
+        streams = [robust_open_connection(
                 addrinfo_list[i][0],
                 addrinfo_list[i][1],
             ) for i in range(len(self.queues))]
@@ -177,11 +187,9 @@ class ProcessProgramRunner(ProgramRunner):
         return send, recv
 
     async def join(self):
-        await asyncio.sleep(2)
         await self.senders.connect()
         results = await asyncio.gather(*self.programs)
         self.senders.close()
-        await asyncio.sleep(1)
         await self.listener.close()
         return results
 

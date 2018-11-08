@@ -1,6 +1,7 @@
 import random
 import asyncio
 import uuid
+import os
 from honeybadgermpc.passive import write_polys, TaskProgramRunner, Field, Poly
 
 
@@ -9,6 +10,10 @@ sharedatadir = "sharedata"
 powersPrefix = f"{sharedatadir}/powers"
 cppPrefix = f"{sharedatadir}/cpp-phase"
 
+async def wait_for_preprocessing():
+    while not os.path.exists(f"{sharedatadir}/READY"):
+        print(f"waiting for preprocessing {sharedatadir}/READY")
+        await asyncio.sleep(1)
 
 def generate_test_powers(prefix, a, b, k, N, t):
     # Generate k powers, store in files of form "prefix-%d.share"
@@ -196,18 +201,21 @@ if __name__ == "__main__":
     try:
         if not config_dict['skipPreprocessing']:
             # Need to keep these fixed when running on processes.
-            k = 4
-            a_s = [Field(i) for i in range(100+k, 100, -1)]
+            k = config_dict['k']
+            assert k < 1000
+            a_s = [Field(i) for i in range(1000+k, 1000, -1)]
             b_s = [Field(i) for i in range(10, 10+k)]
 
             if nodeid == 0:
                 os.makedirs("sharedata/", exist_ok=True)
-                loop.run_until_complete(runCommandSync("rm -f sharedata/**"))
+                loop.run_until_complete(runCommandSync(f"rm -f {sharedatadir}/**"))
                 for i, a in enumerate(a_s):
                     batchid = f"{runid}_{i}"
                     generate_test_powers(f"{powersPrefix}_{batchid}", a, b_s[i], k, N, t)
+                loop.run_until_complete(runCommandSync(f"touch {sharedatadir}/READY"))
             else:
-                loop.run_until_complete(asyncio.sleep(1))
+                loop.run_until_complete(wait_for_preprocessing())
+
         loop.run_until_complete(
             asynchronusMixingInProcesses(network_info, N, t, k, runid, nodeid)
         )

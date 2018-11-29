@@ -64,6 +64,7 @@ class Senders(object):
         ) for i in range(len(self.queues))]
         streams = await asyncio.gather(*streams)
         writers = [stream[1] for stream in streams]
+        self.writers = writers
 
         # Setup tasks to consume messages from queues
         # This is to ensure that messages are delivered in the correct order
@@ -78,16 +79,15 @@ class Senders(object):
             writer._bytesSent = 0
             while True:
                 try:
-                    msg = await asyncio.wait_for(q.get(), timeout=4)
+                    msg = await asyncio.wait_for(q.get(), timeout=1)
                 except asyncio.TimeoutError:
-                    print('timeout', recvid)
                     # FIXME: debug diagnostic below
                     print('timeout sending to:', recvid,
                           'sent:', writer._bytesSent)
                     # Option 1: heartbeat
-                    msg = "heartbeat"
+                    # msg = "heartbeat"
                     # Option 2: no heartbeat
-                    # continue
+                    continue
 
                 if msg is None:
                     print('Close the connection')
@@ -202,7 +202,7 @@ class Listener(object):
         await server.wait_closed()
         for task in self.tasks:
             task.cancel()
-
+        await asyncio.gather(*self.tasks, return_exceptions=True)
 
 class NodeDetails(object):
     def __init__(self, ip, port):

@@ -78,9 +78,8 @@ class Senders(object):
             writer._bytesSent = 0
             while True:
                 try:
-                    msg = await asyncio.wait_for(q.get(), timeout=4)
+                    msg = await asyncio.wait_for(q.get(), timeout=1)
                 except asyncio.TimeoutError:
-                    print('timeout', recvid)
                     # FIXME: debug diagnostic below
                     print('timeout sending to:', recvid,
                           'sent:', writer._bytesSent)
@@ -202,7 +201,7 @@ class Listener(object):
         await server.wait_closed()
         for task in self.tasks:
             task.cancel()
-
+        await asyncio.gather(*self.tasks, return_exceptions=True)
 
 class NodeDetails(object):
     def __init__(self, ip, port):

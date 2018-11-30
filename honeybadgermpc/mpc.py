@@ -1,7 +1,7 @@
 import asyncio
 from asyncio import Future
 from .field import GF, GFElement
-from .polynomial import polynomialsOver
+from .polynomial import polynomialsOver, get_omega
 from .router import simple_router
 from .program_runner import ProgramRunner
 import random
@@ -36,6 +36,9 @@ class Mpc(object):
         self.t = t
         self.myid = myid
         self.pid = pid
+        n_pow2 = nearest_power_of_two(N)
+        self.omega = get_omega(Field, n_pow2, seed=1)
+
 
         # send(j, o): sends object o to party j with (current sid)
         # recv(): returns (j, o) from party j
@@ -111,7 +114,7 @@ class Mpc(object):
 
         def point(i): return Field(i+1)
         opening = robust_reconstruct(
-            share_buffer, Field, self.N, self.t, point)
+            share_buffer, Field, self.N, self.t, point, self.omega)
         self._openings[shareid] = opening
         P, failures = await opening
         return P(Field(0))
@@ -366,9 +369,17 @@ Field = GF.get(
 Poly = polynomialsOver(Field)
 
 
+def nearest_power_of_two(x):
+    return 2**(x-1).bit_length()   # Round up
+
+
 def write_polys(prefix, modulus, N, t, polys):
+    n_pow2 = nearest_power_of_two(N)
+    omega = get_omega(Field, n_pow2, seed=1)
+
     for i in range(N):
-        shares = [f(i+1) for f in polys]
+        # shares = [f(i+1) for f in polys]  # TODO: make it use omega
+        shares = [f(omega**i) for f in polys]
         with open('%s-%d.share' % (prefix, i), 'w') as f:
             write_shares(f, modulus, t, i, shares)
 

@@ -64,7 +64,7 @@ def makeEncoderDecoder(n, k, p, omega=None):
     if omega is None:
         def point(i): return Fp(1+i)
     else:
-        def point(i): return Fp(omega)**i
+        def point(i): return omega**i
 
     # message is a list of integers at most p
     def encode(message):

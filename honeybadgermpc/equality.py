@@ -2,6 +2,7 @@ from honeybadgermpc.mpc import *
 import logging
 import asyncio
 from honeybadgermpc.field import GF
+from honeybadgermpc.mixins import BeaverTriple, MixinOpName
 
 async def equality(context, p_share, q_share):
 
@@ -11,7 +12,6 @@ async def equality(context, p_share, q_share):
         """Return the legendre symbol ``legendre(a, p)`` where *p* is the
         order of the field of *a*.
         """
-
         assert a.modulus % 2 == 1
         b = (a ** ((a.modulus - 1)//2))
         if b == 1:
@@ -23,10 +23,6 @@ async def equality(context, p_share, q_share):
     diff_a = p_share - q_share
     k = security_parameter = 32
     Field = GF.get(Subgroup.BLS12_381)
-
-    def mul(x, y):
-        a, b, ab = pp_elements.get_triple(context)
-        return beaver_mult(context, x, y, a, b, ab)
 
     async def _gen_test_bit():
 
@@ -41,7 +37,7 @@ async def equality(context, p_share, q_share):
         # If b_i == 1 c_i will always be a square modulo p if a is
         # zero and with probability 1/2 otherwise (except if rp == 0).
         # If b_i == -1 it will be non-square.
-        _c = await mul(diff_a, _r) + await mul(_b, await mul(_rp, _rp))
+        _c = await (diff_a * _r) + await (_b * (await (_rp*_rp)))
         c = await _c.open()
 
         return c, _b
@@ -68,7 +64,7 @@ async def equality(context, p_share, q_share):
     # Take the product (this is here the same as the "and") of all
     # the x'es
     while len(x) > 1:
-        x.append(await mul(x.pop(0), x.pop(0)))
+        x.append(await (x.pop(0) * x.pop(0)))
 
     return await x[0].open()
 
@@ -93,8 +89,6 @@ if __name__ == '__main__':
     pp_elements.generate_zeros(1000, 3, 1)
     logging.info('Generating random shares in sharedata/')
     pp_elements.generate_rands(1000, 3, 1)    
-    logging.info('Generating random shares of triples in sharedata/')
-    pp_elements.generate_triples(1000, 3, 1)
     logging.info('Generating random shares of bits in sharedata/')
     pp_elements.generate_bits(1000, 3, 1)
 
@@ -104,7 +98,7 @@ if __name__ == '__main__':
     # loop.set_debug(True)
     try:
         logging.info("Start")
-        programRunner = TaskProgramRunner(3, 1)
+        programRunner = TaskProgramRunner(3, 1, {MixinOpName.MultiplyShare: BeaverTriple.multiply_shares})
         programRunner.add(test_equality)
         loop.run_until_complete(programRunner.join())
     finally:

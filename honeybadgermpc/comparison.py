@@ -3,14 +3,7 @@ import logging
 import asyncio
 from honeybadgermpc.field import GF
 from gmpy2 import num_digits
-
-
-async def test_xor(context):
-	x = context.Share(10)
-	y = context.field(5)
-	print(x^y)
-	print(x + y)
-
+from honeybadgermpc.mixins import BeaverTriple, MixinOpName
 
 async def comparison(context, a_share, b_share):
 	"""MULTIPARTY COMPARISON - An Improved Multiparty Protocol for 
@@ -22,13 +15,9 @@ async def comparison(context, a_share, b_share):
 
 	pp_elements = PreProcessedElements()
 
-	def mul(x, y):
-		a, b, ab = pp_elements.get_triple(context)
-		return beaver_mult(context, x, y, a, b, ab)
-
 	async def get_random_bit():
 		r = pp_elements.get_rand(context)
-		r_square = await mul(r, r)
+		r_square = await (r*r)
 		r_sq = await r_square.open()
 		print("r_sq: ", r_sq)
 
@@ -40,8 +29,8 @@ async def comparison(context, a_share, b_share):
 			print("aaaa type: ", type(aaaa), aaaa)
 			return aaaa
 
-	cccc = await get_random_bit()
-	print("cccc: ", cccc)
+	# cccc = await get_random_bit()
+	# print("cccc: ", cccc.v)
 
 	modulus = Subgroup.BLS12_381
 	Field = GF.get(modulus)
@@ -69,16 +58,15 @@ async def comparison(context, a_share, b_share):
 	r_0 = r_bits[0]		# [r]0
 	c0 = c_bits[0]
 
-	# for i in r_bits:
-		# print(await i.open())
-
 	# ############# PART 2 ###############
 	# Compute X
 	X = 0
 	for i in range(l):
 		cr = 0
 		for j in range(i+1, l):
-			cr = cr + (r_bits[j] ^ Field(c_bits[j]))
+			temp = (await (r_bits[j].open()) ^ c_bits[j])
+			print("temp: ", temp)
+			cr = cr + temp
 		X = X + r_bits[i] * (1 - c_bits[i]) \
 			* 2 ** cr
 
@@ -92,9 +80,7 @@ async def comparison(context, a_share, b_share):
 	s_0 = s_bits[0]
 	s1 = s_bits[-1]		# [s_{l-1}]	
 	s2 = s_bits[-2]		# [s_{l-2}]
-
-
-	s1s2 = await mul(s1, s2)
+	s1s2 = await (s1*s2)
 
 	for i, b in enumerate(s_bits):
 		s_B = s_B + b * 2**i
@@ -147,8 +133,8 @@ if __name__ == '__main__':
 	loop = asyncio.get_event_loop()
 	try:
 		logging.info("Start")
-		programRunner = TaskProgramRunner(3, 1)
-		programRunner.add(test_xor)
+		programRunner = TaskProgramRunner(3, 1, {MixinOpName.MultiplyShare: BeaverTriple.multiply_shares})
+		programRunner.add(test_comp)
 		loop.run_until_complete(programRunner.join())
 	finally:
 		loop.close()

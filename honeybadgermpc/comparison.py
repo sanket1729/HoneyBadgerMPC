@@ -14,28 +14,40 @@ async def comparison(context, a_share, b_share):
 	"""
 
 	pp_elements = PreProcessedElements()
-
-	async def get_random_bit():
-		r = pp_elements.get_rand(context)
-		r_square = await (r*r)
-		r_sq = await r_square.open()
-		print("r_sq: ", r_sq)
-
-		if r_sq ==0:
-			return get_random_bit()
-		else:
-			root = r_sq.sqrt()
-			aaaa = (r/root + 1) / 2
-			print("aaaa type: ", type(aaaa), aaaa)
-			return aaaa
-
-	# cccc = await get_random_bit()
-	# print("cccc: ", cccc.v)
-
 	modulus = Subgroup.BLS12_381
 	Field = GF.get(modulus)
 	l = num_digits(modulus, 2)
 	k = security_parameter = 32
+
+	async def get_random_bit():
+		r = pp_elements.get_rand(context)
+		print("Value of r:", context.myid, await r.open())
+		R = await r.open()
+		r_square = await (r*r)
+		r_sq = await r_square.open()
+
+		print("R: ", R)
+		print("R^2: ", r_sq)
+
+		# if pow(r_sq, (modulus-1)//2) != Field(1):
+		# 	return await get_random_bit()
+
+		if r_sq ==0:
+			return await get_random_bit()
+		else:
+			root = r_sq.sqrt()
+			rrrr = (~root)*r
+			print("root: ", root)
+			print("~root: ", (~root))
+			print("[r]: ", r)
+			print("[r]/|r| = ", rrrr)
+			aaaa = (~2) * ((~root)*r + Field(1))
+			return aaaa
+
+	cccc = await get_random_bit()
+	print("cccc: ", cccc.v)
+
+	return
 
 	# assert 2 * a_share + 1 < modulus, "[a] < (p-1)/2 must hold"
 	# assert 2 * b_share + 1 < modulus, "[b] < (p-1)/2 must hold"
@@ -52,7 +64,8 @@ async def comparison(context, a_share, b_share):
 
 	z = a_share - b_share
 	c = await (2 * z + r_B).open()
-	c_bits = [int(x) for x in list('{0:0b}'.format(c.value))]
+	c_bits = [Field(int(x)) for x in list('{0:0b}'.format(c.value))]
+	print(c_bits)
 	c_bits.reverse()
 
 	r_0 = r_bits[0]		# [r]0
@@ -60,16 +73,18 @@ async def comparison(context, a_share, b_share):
 
 	# ############# PART 2 ###############
 	# Compute X
+	print("l: ", l)
+	print("len(r_bits): ", len(r_bits))
+	print("len(c_bits): ", len(c_bits))
 	X = 0
-	for i in range(l):
-		cr = 0
+	for i in range(l-1):
+		cr = Field(0)
 		for j in range(i+1, l):
-			temp = (await (r_bits[j].open()) ^ c_bits[j])
-			print("temp: ", temp)
-			cr = cr + temp
-		X = X + r_bits[i] * (1 - c_bits[i]) \
-			* 2 ** cr
-
+			print(i, j, "r_bits[j] ", r_bits[j].v, "c_bits[j] ", c_bits[j])
+			cr = cr + r_bits[j] + c_bits[j] - 2*c_bits[j]*r_bits[j]
+		print("type(cr.v): ", type(cr.v.value), cr.v.value)
+		pp = pow(2, cr.v.value)
+		X = X + (Field(1) - c_bits[i]) * pp * r_bits[i]
 
 	# ############# PART 3 ###############
 	# Extracting LSB
@@ -109,7 +124,7 @@ async def comparison(context, a_share, b_share):
 async def test_comp(context):
 	pp_elements = PreProcessedElements()
 	a = pp_elements.get_zero(context) + context.Share(233)
-	b = pp_elements.get_zero(context) + context.Share(23)
+	b = pp_elements.get_zero(context) + context.Share(23333)
 
 	result = await comparison(context, a, b)
 
@@ -121,19 +136,19 @@ async def test_comp(context):
 if __name__ == '__main__':
 	pp_elements = PreProcessedElements()
 	logging.info('Generating random shares of zero in sharedata/')
-	pp_elements.generate_zeros(1000, 3, 1)
+	pp_elements.generate_zeros(1000, 4, 1)
 	logging.info('Generating random shares in sharedata/')
-	pp_elements.generate_rands(1000, 3, 1)
+	pp_elements.generate_rands(1000, 4, 1)
 	logging.info('Generating random shares of triples in sharedata/')
-	pp_elements.generate_triples(1000, 3, 1)
+	pp_elements.generate_triples(1000, 4, 1)
 	logging.info('Generating random shares of bits in sharedata/')
-	pp_elements.generate_bits(1000, 3, 1)
+	pp_elements.generate_bits(1000, 4, 1)
 
 	asyncio.set_event_loop(asyncio.new_event_loop())
 	loop = asyncio.get_event_loop()
 	try:
 		logging.info("Start")
-		programRunner = TaskProgramRunner(3, 1, {MixinOpName.MultiplyShare: BeaverTriple.multiply_shares})
+		programRunner = TaskProgramRunner(4, 1, {MixinOpName.MultiplyShare: BeaverTriple.multiply_shares})
 		programRunner.add(test_comp)
 		loop.run_until_complete(programRunner.join())
 	finally:

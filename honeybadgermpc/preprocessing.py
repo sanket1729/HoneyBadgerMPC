@@ -86,9 +86,9 @@ class PreProcessedElements(object):
         self._write_polys(PreProcessingConstants.RANDS_FILE_NAME_PREFIX, n, t, polys)
 
     def generate_bits(self, k, n, t):
-        self._create_sharedata_dir_if_not_exists
+        self._create_sharedata_dir_if_not_exists()
         polys = [self.poly.random(t, randint(0, 1)) for _ in range(k)]
-        self._write_polys(PreProcessingConstants.RANDS_FILE_NAME_PREFIX, n, t, polys)
+        self._write_polys(PreProcessingConstants.BITS_FILE_NAME_PREFIX, n, t, polys)
 
     def generate_one_minus_one_rands(self, k, n, t):
         self._create_sharedata_dir_if_not_exists()
@@ -154,7 +154,7 @@ class PreProcessedElements(object):
         key = (ctx.myid, ctx.N, ctx.t)
         if key not in self._bits:
             file_suffix = f"_{ctx.N}_{ctx.t}-{ctx.myid}.share"
-            file_path = f"{PreProcessingConstants.RANDS_FILE_NAME_PREFIX}{file_suffix}"
+            file_path = f"{PreProcessingConstants.BITS_FILE_NAME_PREFIX}{file_suffix}"
             self._bits[key] = iter(self._read_share_values_from_file(file_path))
         return ctx.Share(next(self._bits[key]))
 

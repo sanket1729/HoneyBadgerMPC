@@ -216,7 +216,6 @@ class GFElement(FieldElement):
             return (lastx, lasty, a)
 
         inverse = extended_gcd(self.value, self.modulus)[0]
-        print("invert: ", self.value, inverse)
         return GFElement(inverse, self.field)
 
     def __div__(self, other):
@@ -255,7 +254,6 @@ class GFElement(FieldElement):
             # The case that self.modulus % 4 == 1
             # Cipolla’s Algorithm
             # http://people.math.gatech.edu/~mbaker/pdf/cipolla2011.pdf
-            print("======= sqrt for 1 mod 4 ======")
             t = u = 0
             for i in range(1, self.modulus):
                 # u = GFElement((i*i - self), self.field)

@@ -43,7 +43,7 @@ async def comparison(context, a_share, b_share):
 
 	z = a_share - b_share
 	c = await (2 * z + r_B).open()
-	c_bits = [Field(int(x)) for x in list('{0:0b}'.format(c.value))]
+	c_bits = [Field(int(x)) for x in list('{0:0255b}'.format(c.value))]
 	c_bits.reverse()
 
 	r_0 = r_bits[0]		# [r0]
@@ -124,8 +124,8 @@ if __name__ == '__main__':
 	pp_elements.generate_zeros(1000, n, t)
 	logging.info('Generating random shares in sharedata/')
 	pp_elements.generate_rands(1000, n, t)
-	# logging.info('Generating random shares of triples in sharedata/')
-	# pp_elements.generate_triples(1000, n, t)
+	logging.info('Generating random shares of triples in sharedata/')
+	pp_elements.generate_triples(1000, n, t)
 	logging.info('Generating random shares of bits in sharedata/')
 	pp_elements.generate_bits(1000, n, t)
 

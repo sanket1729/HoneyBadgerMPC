@@ -18,7 +18,6 @@ async def comparison(context, a_share, b_share):
 	modulus = Subgroup.BLS12_381
 	Field = GF.get(modulus)
 	l = num_digits(modulus, 2)
-	k = security_parameter = 32
 
 	async def get_random_bit():
 		r = pp_elements.get_rand(context)
@@ -55,15 +54,10 @@ async def comparison(context, a_share, b_share):
 	for i in range(l-1):
 		cr = Field(0)
 		for j in range(i+1, l):
-			print(i, j)
-			# print(i, j, "r_bits[j] ", await r_bits[j].open(), "c_bits[j] ", c_bits[j])
 			c_xor_r = r_bits[j] + c_bits[j] - Field(2)*c_bits[j]*r_bits[j]
-			# print("c_xor_r: ", await c_xor_r.open())
 			cr = cr + c_xor_r
 		cr_open = await cr.open()
-		# print("cr: ", cr_open)
 		pp = pow(2, int(cr_open))
-		# print("pp: ", pp)
 		X = X + (Field(1) - c_bits[i]) * pp * r_bits[i]
 
 	# ############# PART 3 ###############
@@ -107,7 +101,7 @@ async def comparison(context, a_share, b_share):
 async def test_comp(context):
 	pp_elements = PreProcessedElements()
 	a = pp_elements.get_zero(context) + context.Share(233)
-	b = pp_elements.get_zero(context) + context.Share(23)
+	b = pp_elements.get_zero(context) + context.Share(23333)
 
 	r = pp_elements.get_rand(context)
 	result = await comparison(context, a, b)

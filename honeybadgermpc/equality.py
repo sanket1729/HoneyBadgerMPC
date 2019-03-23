@@ -88,14 +88,14 @@ if __name__ == '__main__':
     logging.info('Generating random shares of zero in sharedata/')
     pp_elements.generate_zeros(1000, 3, 1)
     logging.info('Generating random shares in sharedata/')
-    pp_elements.generate_rands(1000, 3, 1)    
+    pp_elements.generate_rands(1000, 3, 1)
+    logging.info('Generating random shares of triples in sharedata/')
+    pp_elements.generate_triples(1000, 3, 1)
     logging.info('Generating random shares of bits in sharedata/')
     pp_elements.generate_bits(1000, 3, 1)
 
     asyncio.set_event_loop(asyncio.new_event_loop())
     loop = asyncio.get_event_loop()
-    # loop.set_exception_handler(handle_async_exception)
-    # loop.set_debug(True)
     try:
         logging.info("Start")
         programRunner = TaskProgramRunner(3, 1, {MixinOpName.MultiplyShare: BeaverTriple.multiply_shares})

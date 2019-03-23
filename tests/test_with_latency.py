@@ -37,23 +37,6 @@ def simple_router(n, latency=1.0):
 
 from honeybadgermpc.mpc import ProgramRunner, Mpc
 class TaskProgramRunnerWithLatency(ProgramRunner):
-#     def __init__(self, n, t):
-#         self.N, self.t, self.pid = n, t, 0
-#         self.tasks = []
-#         self.loop = asyncio.get_event_loop()
-
-#     def add(self, program, **kwargs):
-#         sends, recvs = simple_router(self.N)
-#         for i in range(self.N):
-#             context = Mpc(
-#                 'sid', self.N, self.t, i, self.pid, sends[i], recvs[i], program, **kwargs
-#             )
-#             self.tasks.append(self.loop.create_task(context._run()))
-#         self.pid += 1
-
-#     async def join(self):
-#         return await asyncio.gather(*self.tasks)
-# class TaskProgramRunner(ProgramRunner):
     def __init__(self, n, t, mixin_ops={}):
         self.N, self.t, self.pid = n, t, 0
         self.mixin_ops = mixin_ops

@@ -59,6 +59,7 @@ async def comparison(context, a_share, b_share):
 		cr_open = await cr.open()
 		pp = pow(2, int(cr_open))
 		X = X + (Field(1) - c_bits[i]) * pp * r_bits[i]
+	X = X + (Field(1) - c_bits[l-1]) * r_bits[l-1]	# ???
 
 	# ############# PART 3 ###############
 	# Extracting LSB

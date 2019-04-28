@@ -1,11 +1,13 @@
 from pytest import mark
 from random import randint
 from contextlib import ExitStack
+from pickle import dumps
 from honeybadgermpc.polynomial import polynomials_over
 from honeybadgermpc.poly_commit_const import gen_pc_const_crs
 from honeybadgermpc.betterpairing import G1, ZR
 from honeybadgermpc.hbavss import HbAvssLight, HbAvssBatch
 from honeybadgermpc.mpc import TaskProgramRunner
+from honeybadgermpc.symmetric_crypto import SymmetricCrypto
 import asyncio
 
 
@@ -54,18 +56,187 @@ async def test_hbavss_batch(test_router):
     crs = gen_pc_const_crs(t, g=g, h=h)
 
     values = [ZR.random()] * (t+1)
-    avss_tasks = [None]*n
+    avss_tasks = [None] * n
     dealer_id = randint(0, n-1)
 
+    shares = [None] * n
     with ExitStack() as stack:
+        hbavss_list = [None] * n
         for i in range(n):
             hbavss = HbAvssBatch(pks, sks[i], crs, n, t, i, sends[i], recvs[i])
+            hbavss_list[i] = hbavss
             stack.enter_context(hbavss)
             if i == dealer_id:
                 avss_tasks[i] = asyncio.create_task(hbavss.avss(0, values=values))
             else:
                 avss_tasks[i] = asyncio.create_task(hbavss.avss(0, dealer_id=dealer_id))
-        shares = await asyncio.gather(*avss_tasks)
+        shares = await asyncio.gather(*[hbavss_list[i].shares_future for i in range(n)])
+        for task in avss_tasks:
+            task.cancel()
+
+    fliped_shares = list(map(list, zip(*shares)))
+    recovered_values = []
+    for item in fliped_shares:
+        recovered_values.append(polynomials_over(
+            ZR).interpolate_at(zip(range(1, n+1), item)))
+
+    assert recovered_values == values
+
+
+@mark.asyncio
+async def test_hbavss_batch_share_fault(test_router):
+    def callback(future):
+        if future.done():
+            ex = future.exception()
+            if ex is not None:
+                print('\nException:', ex)
+                raise ex
+
+    class BadDealer(HbAvssBatch):
+        def _get_dealer_msg(self, values):
+            fault_n = randint(1, self.n-1)
+            fault_k = randint(1, len(values)-1)
+            secret_size = len(values)
+            phi = [None] * secret_size
+            commitments = [None] * secret_size
+            aux_poly = [None] * secret_size
+            for k in range(secret_size):
+                phi[k] = self.poly.random(self.t, values[k])
+                commitments[k], aux_poly[k] = self.poly_commit.commit(phi[k])
+
+            ephemeral_secret_key = self.field.random()
+            ephemeral_public_key = pow(self.g, ephemeral_secret_key)
+            dispersal_msg_list = [None] * self.n
+            for i in range(self.n):
+                shared_key = pow(self.public_keys[i], ephemeral_secret_key)
+                z = [None] * secret_size
+                for k in range(secret_size):
+                    witness = self.poly_commit.create_witness(phi[k], aux_poly[k], i+1)
+                    if (i == fault_n and k == fault_k):
+                        z[k] = SymmetricCrypto.encrypt(
+                            str(shared_key).encode("utf-8"),
+                            (ZR.random(), ZR.random(), witness))
+                    else:
+                        z[k] = SymmetricCrypto.encrypt(
+                            str(shared_key).encode("utf-8"),
+                            (phi[k](i+1), aux_poly[k](i+1), witness))
+                dispersal_msg_list[i] = dumps(z)
+            return dumps((commitments, ephemeral_public_key)), dispersal_msg_list
+
+    t = 2
+    n = 3*t + 1
+
+    g, h, pks, sks = get_avss_params(n, t)
+    sends, recvs, _ = test_router(n)
+    crs = gen_pc_const_crs(t, g=g, h=h)
+
+    values = [ZR.random()] * (t+1)
+    avss_tasks = [None] * n
+    dealer_id = randint(0, n-1)
+
+    shares = [None] * n
+    with ExitStack() as stack:
+        hbavss_list = []
+        for i in range(n):
+            if i == dealer_id:
+                hbavss = BadDealer(pks, sks[i], crs, n, t, i, sends[i], recvs[i])
+            else:
+                hbavss = HbAvssBatch(pks, sks[i], crs, n, t, i, sends[i], recvs[i])
+            hbavss_list.append(hbavss)
+            stack.enter_context(hbavss)
+            if i == dealer_id:
+                avss_tasks[i] = asyncio.create_task(hbavss.avss(0, values=values))
+                avss_tasks[i].add_done_callback(callback)
+            else:
+                avss_tasks[i] = asyncio.create_task(hbavss.avss(0, dealer_id=dealer_id))
+        for i in range(n):
+            shares[i] = await hbavss_list[i].shares_future
+        for task in avss_tasks:
+            task.cancel()
+
+    fliped_shares = list(map(list, zip(*shares)))
+    recovered_values = []
+    for item in fliped_shares:
+        recovered_values.append(polynomials_over(
+            ZR).interpolate_at(zip(range(1, n+1), item)))
+
+    assert recovered_values == values
+
+
+@mark.asyncio
+# Send t parties entirely faulty messages
+async def test_hbavss_batch_t_share_faults(test_router):
+    def callback(future):
+        if future.done():
+            ex = future.exception()
+            if ex is not None:
+                print('\nException:', ex)
+                raise ex
+
+    class BadDealer(HbAvssBatch):
+        def _get_dealer_msg(self, values):
+            fault_n_list = []
+            while len(fault_n_list) < self.t:
+                i = randint(1, self.n-1)
+                if i not in fault_n_list:
+                    fault_n_list.append(i)
+            secret_size = len(values)
+            phi = [None] * secret_size
+            commitments = [None] * secret_size
+            aux_poly = [None] * secret_size
+            for k in range(secret_size):
+                phi[k] = self.poly.random(self.t, values[k])
+                commitments[k], aux_poly[k] = self.poly_commit.commit(phi[k])
+
+            ephemeral_secret_key = self.field.random()
+            ephemeral_public_key = pow(self.g, ephemeral_secret_key)
+            dispersal_msg_list = [None] * self.n
+            for i in range(self.n):
+                shared_key = pow(self.public_keys[i], ephemeral_secret_key)
+                z = [None] * secret_size
+                for k in range(secret_size):
+                    witness = self.poly_commit.create_witness(phi[k], aux_poly[k], i+1)
+                    if (i in fault_n_list):
+                        z[k] = SymmetricCrypto.encrypt(
+                            str(shared_key).encode("utf-8"),
+                            (ZR.random(), ZR.random(), witness))
+                    else:
+                        z[k] = SymmetricCrypto.encrypt(
+                            str(shared_key).encode("utf-8"),
+                            (phi[k](i+1), aux_poly[k](i+1), witness))
+                dispersal_msg_list[i] = dumps(z)
+            return dumps((commitments, ephemeral_public_key)), dispersal_msg_list
+
+    t = 2
+    n = 3*t + 1
+
+    g, h, pks, sks = get_avss_params(n, t)
+    sends, recvs, _ = test_router(n)
+    crs = gen_pc_const_crs(t, g=g, h=h)
+
+    values = [ZR.random()] * (t+1)
+    avss_tasks = [None] * n
+    dealer_id = randint(0, n-1)
+
+    shares = [None] * n
+    with ExitStack() as stack:
+        hbavss_list = []
+        for i in range(n):
+            if i == dealer_id:
+                hbavss = BadDealer(pks, sks[i], crs, n, t, i, sends[i], recvs[i])
+            else:
+                hbavss = HbAvssBatch(pks, sks[i], crs, n, t, i, sends[i], recvs[i])
+            hbavss_list.append(hbavss)
+            stack.enter_context(hbavss)
+            if i == dealer_id:
+                avss_tasks[i] = asyncio.create_task(hbavss.avss(0, values=values))
+                avss_tasks[i].add_done_callback(callback)
+            else:
+                avss_tasks[i] = asyncio.create_task(hbavss.avss(0, dealer_id=dealer_id))
+        for i in range(n):
+            shares[i] = await hbavss_list[i].shares_future
+        for task in avss_tasks:
+            task.cancel()
 
     fliped_shares = list(map(list, zip(*shares)))
     recovered_values = []

@@ -24,6 +24,7 @@ class HbAVSSMessageType:
     OK = "OK"
     IMPLICATE = "IMPLICATE"
     READY = "READY"
+    RECOVERY = "RECOVERY"
     RECOVERY1 = "RECOVERY1"
     RECOVERY2 = "RECOVERY2"
 
@@ -56,6 +57,28 @@ class HbAvssLight():
     def __exit__(self, type, value, traceback):
         self.subscribe_recv_task.cancel()
 
+    def _handle_implication(self, commitment, ephemeral_public_key, j, j_sk, j_z):
+        """
+        Handle the implication of AVSS.
+        Return True if the implication is valid, False otherwise.
+        """
+        # discard if PKj ! = g^SKj
+        if self.public_keys[j] != pow(self.g, j_sk):
+            logger.warn("[%d] invalid implicate from sender %s",
+                        self.my_id, j)
+            return False
+        # decrypt and verify
+        j_shared_key = pow(ephemeral_public_key, j_sk)
+        try:
+            j_share, j_aux = SymmetricCrypto.decrypt(
+                str(j_shared_key).encode(), j_z)
+        except:
+            return True
+        if self.poly_commit.verify_eval(
+                commitment, j+1, j_share, j_aux):
+            return False
+        return True
+
     async def _process_avss_msg(self, avss_id, dealer_id, avss_msg):
         tag = f"{dealer_id}-{avss_id}-AVSS"
         send, recv = self.get_send(tag), self.subscribe_recv(tag)
@@ -64,23 +87,52 @@ class HbAvssLight():
             for i in range(self.n):
                 send(i, msg)
 
-        commitments, ephemeral_public_key, encrypted_witnesses = loads(avss_msg)
+        commitment, ephemeral_public_key, encrypted_blobs = loads(avss_msg)
         shared_key = pow(ephemeral_public_key, self.private_key)
-        share, witness = SymmetricCrypto.decrypt(
-            str(shared_key).encode(), encrypted_witnesses[self.my_id])
-        if self.poly_commit.verify_eval(commitments, self.my_id+1, share, witness):
-            multicast(HbAVSSMessageType.OK)
-        else:
-            logging.error("PolyCommit verification failed.")
-            raise HoneyBadgerMPCError("PolyCommit verification failed.")
+        share_valid = True
+        try:
+            share, witness = SymmetricCrypto.decrypt(
+                str(shared_key).encode(), encrypted_blobs[self.my_id])
+            if self.poly_commit.verify_eval(commitment, self.my_id+1, share, witness):
+                multicast((HbAVSSMessageType.OK,""))
+        except:
+            multicast((HbAVSSMessageType.IMPLICATE, self.private_key))
+            share_valid = False
 
-        # to handle the case that a (malicious) node sends
-        # an OK message multiple times
+        # RECEIVE LOOP
         ok_set = set()
-        while len(ok_set) < 2 * self.t + 1:
-            sender, avss_msg = await recv()  # First value is the `sid`
-            if avss_msg == HbAVSSMessageType.OK and sender not in ok_set:
+        recovery_set = set()
+        sent_recovery = False
+        while True:
+            if len(ok_set) == 2 * self.t + 1 and share_valid:
+                break
+            if len(recovery_set) == self.t + 1:
+                share = self.poly.interpolate_at(list(recovery_set),self.my_id+1)
+            sender, avss_msg = await recv()  # First value is the `sid` (not true anymore?)
+            if avss_msg[0] == HbAVSSMessageType.OK and sender not in ok_set:
                 ok_set.add(sender)
+            if avss_msg[0] == HbAVSSMessageType.IMPLICATE and not sent_recovery:
+                j_sk = avss_msg[1]
+                j = sender
+                # validate the implicate
+                if not self._handle_implication(commitment, ephemeral_public_key, j, j_sk, encrypted_blobs[j]):
+                    # Count an invalid implicate as an okay
+                    if sender not in ok_set:
+                        ok_set.add(sender)
+                    continue
+                sent_recovery = True
+                multicast((HbAVSSMessageType.RECOVERY, self.private_key))
+            if avss_msg[0] == HbAVSSMessageType.RECOVERY and not share_valid:
+                try:
+                    share_j, aux_j = SymmetricCrypto.decrypt(
+                        str(ephemeral_public_key**avss_msg[1]).encode(), encrypted_blobs[sender])
+                except:
+                    ok_set.add(sender)
+                    continue
+                if self.poly_commit.verify_eval(commitment, sender+1, share_j, aux_j):
+                    if ((sender+1, share_j) not in recovery_set):
+                        recovery_set.add((sender+1, share_j))
+                    
 
         # Output the share as an integer so it is not tied to a type like ZR/GFElement
         share_int = int(share)
@@ -91,7 +143,7 @@ class HbAvssLight():
 
     def _get_dealer_msg(self, value):
         phi = self.poly.random(self.t, value)
-        commitments, aux_poly = self.poly_commit.commit(phi)
+        commitment, aux_poly = self.poly_commit.commit(phi)
         ephemeral_secret_key = self.field.random()
         ephemeral_public_key = pow(self.g, ephemeral_secret_key)
         z = [None]*self.n
@@ -100,7 +152,7 @@ class HbAvssLight():
             shared_key = pow(self.public_keys[i], ephemeral_secret_key)
             z[i] = SymmetricCrypto.encrypt(str(shared_key).encode(), (phi(i+1), witness))
 
-        return dumps((commitments, ephemeral_public_key, z))
+        return dumps((commitment, ephemeral_public_key, z))
 
     async def avss(self, avss_id, value=None, dealer_id=None, client_mode=False):
         """
@@ -246,8 +298,11 @@ class HbAvssBatch():
         implicate_msg = await avid.retrieve(tag, j)
         j_z = loads(implicate_msg)
         j_shared_key = pow(ephemeral_public_key, j_pk)
-        j_share, j_aux, j_witnesses = SymmetricCrypto.decrypt(
-            str(j_shared_key).encode(), j_z[j_k])
+        try:
+            j_share, j_aux, j_witnesses = SymmetricCrypto.decrypt(
+                str(j_shared_key).encode(), j_z[j_k])
+        except:
+            return True
         if self.poly_commit.verify_eval(
                 commitments[j_k], j+1, j_share, j_aux, j_witnesses):
             return False
@@ -278,13 +333,19 @@ class HbAvssBatch():
         # Decrypt
         all_shares_valid = True
         for k in range(secret_size):
-            shares[k], auxes[k], witnesses[k] = SymmetricCrypto.decrypt(
-                str(shared_key).encode(), encrypted_witnesses[k])
+            try:
+                shares[k], auxes[k], witnesses[k] = SymmetricCrypto.decrypt(
+                    str(shared_key).encode(), encrypted_witnesses[k])
+            except:
+                all_shares_valid = False
+                multicast((HbAVSSMessageType.IMPLICATE, self.private_key, k))
+                break
             if not self.poly_commit.verify_eval(
                     commitments[k], self.my_id+1, shares[k], auxes[k], witnesses[k]):
                 # invalid share found and send all implicate msg
                 all_shares_valid = False
                 multicast((HbAVSSMessageType.IMPLICATE, self.private_key, k))
+                break
 
         if all_shares_valid:
             multicast((HbAVSSMessageType.OK, ""))
@@ -361,7 +422,8 @@ class HbAvssBatch():
                     phi_j_i = phi_i(j)
                     send(j, (HbAVSSMessageType.RECOVERY2, phi_j_i))
 
-            # enought R2 received -> output result
+            # enough R2 received -> output result
+            # Does this actually do robust interpolation?
             if len(r2_set) >= 2 * self.t + 1:
                 recovered_result = [None] * secret_size
                 r2_phi_coords = [(i, r2_phi[i])

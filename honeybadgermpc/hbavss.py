@@ -72,11 +72,14 @@ class HbAvssLight():
         try:
             j_share, j_aux = SymmetricCrypto.decrypt(
                 str(j_shared_key).encode(), j_z)
-        except:
+        except Exception:  # TODO: specific exception
+            logger.warn('[%d] Implicate accepted (decrypt)', self.my_id)
             return True
         if self.poly_commit.verify_eval(
                 commitment, j+1, j_share, j_aux):
+            logger.warn('[%d] Invalid implicate (verifyeval)', self.my_id)
             return False
+        logger.warn('[%d] Implicate accepted (verifyeval)', self.my_id)
         return True
 
     async def _process_avss_msg(self, avss_id, dealer_id, avss_msg):
@@ -94,8 +97,11 @@ class HbAvssLight():
             share, witness = SymmetricCrypto.decrypt(
                 str(shared_key).encode(), encrypted_blobs[self.my_id])
             if self.poly_commit.verify_eval(commitment, self.my_id+1, share, witness):
-                multicast((HbAVSSMessageType.OK,""))
-        except:
+                multicast((HbAVSSMessageType.OK, ""))
+            else:
+                raise HoneyBadgerMPCError("verify eval failed")
+        except Exception:  # TODO specific exceptions
+            logging.warn("[%d] Invalid share, implicating", self.my_id)
             multicast((HbAVSSMessageType.IMPLICATE, self.private_key))
             share_valid = False
 
@@ -105,41 +111,55 @@ class HbAvssLight():
         sent_recovery = False
         while True:
             if len(ok_set) == 2 * self.t + 1 and share_valid:
-                break
+                share_int = int(share)
+                self.output_queue.put_nowait((dealer_id, avss_id, share_int))
+                logger.info("[%d] 2t+1 OKs received.", self.my_id)
+                # Keep running the receive loop even after output
+
             if len(recovery_shares) == self.t + 1:
-                share = self.poly.interpolate_at(recovery_shares,self.my_id+1)
-            sender, avss_msg = await recv()  # First value is the `sid` (not true anymore?)
+                share = self.poly.interpolate_at(recovery_shares, self.my_id+1)
+                share_int = int(share)
+                self.output_queue.put_nowait((dealer_id, avss_id, share_int))
+                logger.info("[%d] Output via recovery", self.my_id)
+                # Keep running the receive loop even after output
+
+            sender, avss_msg = await recv()
+            # First value is the `sid` (not true anymore?)
+
             if avss_msg[0] == HbAVSSMessageType.OK and sender not in ok_set:
                 ok_set.add(sender)
             if avss_msg[0] == HbAVSSMessageType.IMPLICATE and not sent_recovery:
                 j_sk = avss_msg[1]
                 j = sender
                 # validate the implicate
-                if not self._handle_implication(commitment, ephemeral_public_key, j, j_sk, encrypted_blobs[j]):
+                if not self._handle_implication(commitment, ephemeral_public_key,
+                                                j, j_sk, encrypted_blobs[j]):
                     # Count an invalid implicate as an okay
+                    logging.warn('[%d] _handle_implication failed', self.my_id)
                     if sender not in ok_set:
                         ok_set.add(sender)
                     continue
                 sent_recovery = True
                 multicast((HbAVSSMessageType.RECOVERY, self.private_key))
-            if avss_msg[0] == HbAVSSMessageType.RECOVERY and not share_valid:
+
+            if avss_msg[0] == HbAVSSMessageType.RECOVERY:
+                j = sender
+                j_sk = avss_msg[1]
+                shared_key = pow(ephemeral_public_key, self.private_key)
+                if share_valid:
+                    continue
                 try:
                     share_j, aux_j = SymmetricCrypto.decrypt(
-                        str(ephemeral_public_key**avss_msg[1]).encode(), encrypted_blobs[sender])
-                except:
+                        str(shared_key).encode(), encrypted_blobs[sender])
+                except Exception:  # TODO: more specific
+                    logging.warn('[%d] decrypt recovery failed', self.my_id)
                     ok_set.add(sender)
                     continue
                 if self.poly_commit.verify_eval(commitment, sender+1, share_j, aux_j):
                     if ([sender+1, share_j] not in recovery_shares):
                         recovery_shares.append([sender+1, share_j])
-                    
-
-        # Output the share as an integer so it is not tied to a type like ZR/GFElement
-        share_int = int(share)
-        self.output_queue.put_nowait((dealer_id, avss_id, share_int))
-
-        logger.debug("[%d] 2t+1 OKs received.", self.my_id)
-        return share_int
+                else:
+                    logging.warn("[%d] Recovery message failed %d", self.my_id, j)
 
     def _get_dealer_msg(self, value):
         phi = self.poly.random(self.t, value)
@@ -301,7 +321,7 @@ class HbAvssBatch():
         try:
             j_share, j_aux, j_witnesses = SymmetricCrypto.decrypt(
                 str(j_shared_key).encode(), j_z[j_k])
-        except:
+        except Exception:  # TODO: more specific
             return True
         if self.poly_commit.verify_eval(
                 commitments[j_k], j+1, j_share, j_aux, j_witnesses):
@@ -336,7 +356,7 @@ class HbAvssBatch():
             try:
                 shares[k], auxes[k], witnesses[k] = SymmetricCrypto.decrypt(
                     str(shared_key).encode(), encrypted_witnesses[k])
-            except:
+            except Exception:  # TODO: more specific
                 all_shares_valid = False
                 multicast((HbAVSSMessageType.IMPLICATE, self.private_key, k))
                 break

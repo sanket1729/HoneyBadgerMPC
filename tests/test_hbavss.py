@@ -67,7 +67,7 @@ async def test_hbavss_light_share_fault(test_router):
                 witness = self.poly_commit.create_witness(aux_poly, i+1)
                 shared_key = pow(self.public_keys[i], ephemeral_secret_key)
                 if i == fault_i:
-                    SymmetricCrypto.encrypt(str(shared_key).encode(), (ZR.random(), witness))
+                    z[i] = SymmetricCrypto.encrypt(str(shared_key).encode(), (ZR.random(), witness))
                 else:
                     z[i] = SymmetricCrypto.encrypt(str(shared_key).encode(), (phi(i+1), witness))
 
@@ -93,10 +93,9 @@ async def test_hbavss_light_share_fault(test_router):
             stack.enter_context(hbavss)
             if i == dealer_id:
                 avss_tasks[i] = asyncio.create_task(hbavss.avss(0, value=value))
-                avss_tasks[i].add_done_callback(callback)
             else:
                 avss_tasks[i] = asyncio.create_task(hbavss.avss(0, dealer_id=dealer_id))
-                avss_tasks[i].add_done_callback(callback)
+            avss_tasks[i].add_done_callback(callback)
         shares = await asyncio.gather(*avss_tasks)
 
     assert polynomials_over(ZR).interpolate_at(zip(range(1, n+1), shares)) == value
@@ -202,9 +201,9 @@ async def test_hbavss_batch_share_fault(test_router):
             stack.enter_context(hbavss)
             if i == dealer_id:
                 avss_tasks[i] = asyncio.create_task(hbavss.avss(0, values=values))
-                avss_tasks[i].add_done_callback(callback)
             else:
                 avss_tasks[i] = asyncio.create_task(hbavss.avss(0, dealer_id=dealer_id))
+            avss_tasks[i].add_done_callback(callback)
         for i in range(n):
             shares[i] = await hbavss_list[i].shares_future
         for task in avss_tasks:

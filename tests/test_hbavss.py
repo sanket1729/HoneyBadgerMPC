@@ -47,6 +47,62 @@ async def test_hbavss_light(test_router):
 
 
 @mark.asyncio
+async def test_hbavss_light_share_fault(test_router):
+    def callback(future):
+        if future.done():
+            ex = future.exception()
+            if ex is not None:
+                print('\nException:', ex)
+                raise ex
+
+    class BadDealer(HbAvssLight):
+        def _get_dealer_msg(self, value):
+            fault_i = randint(0, self.n-1)
+            phi = self.poly.random(self.t, value)
+            commitment, aux_poly = self.poly_commit.commit(phi)
+            ephemeral_secret_key = self.field.random()
+            ephemeral_public_key = pow(self.g, ephemeral_secret_key)
+            z = [None]*self.n
+            for i in range(self.n):
+                witness = self.poly_commit.create_witness(aux_poly, i+1)
+                shared_key = pow(self.public_keys[i], ephemeral_secret_key)
+                if i == fault_i:
+                    SymmetricCrypto.encrypt(str(shared_key).encode(), (ZR.random(), witness))
+                else:
+                    z[i] = SymmetricCrypto.encrypt(str(shared_key).encode(), (phi(i+1), witness))
+
+            return dumps((commitment, ephemeral_public_key, z))
+
+    t = 2
+    n = 3*t + 1
+
+    g, h, pks, sks = get_avss_params(n, t)
+    sends, recvs, _ = test_router(n)
+    crs = [g, h]
+
+    value = ZR.random()
+    avss_tasks = [None]*n
+    dealer_id = randint(0, n-1)
+
+    with ExitStack() as stack:
+        for i in range(n):
+            if i == dealer_id:
+                hbavss = BadDealer(pks, sks[i], crs, n, t, i, sends[i], recvs[i])
+            else:
+                hbavss = HbAvssLight(pks, sks[i], crs, n, t, i, sends[i], recvs[i])
+            stack.enter_context(hbavss)
+            if i == dealer_id:
+                avss_tasks[i] = asyncio.create_task(hbavss.avss(0, value=value))
+                avss_tasks[i].add_done_callback(callback)
+            else:
+                avss_tasks[i] = asyncio.create_task(hbavss.avss(0, dealer_id=dealer_id))
+                avss_tasks[i].add_done_callback(callback)
+        shares = await asyncio.gather(*avss_tasks)
+
+    assert polynomials_over(ZR).interpolate_at(zip(range(1, n+1), shares)) == value
+
+
+@mark.asyncio
 async def test_hbavss_batch(test_router):
     t = 2
     n = 3*t + 1

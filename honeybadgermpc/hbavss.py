@@ -101,13 +101,13 @@ class HbAvssLight():
 
         # RECEIVE LOOP
         ok_set = set()
-        recovery_set = set()
+        recovery_shares = []
         sent_recovery = False
         while True:
             if len(ok_set) == 2 * self.t + 1 and share_valid:
                 break
-            if len(recovery_set) == self.t + 1:
-                share = self.poly.interpolate_at(list(recovery_set),self.my_id+1)
+            if len(recovery_shares) == self.t + 1:
+                share = self.poly.interpolate_at(recovery_shares,self.my_id+1)
             sender, avss_msg = await recv()  # First value is the `sid` (not true anymore?)
             if avss_msg[0] == HbAVSSMessageType.OK and sender not in ok_set:
                 ok_set.add(sender)
@@ -130,8 +130,8 @@ class HbAvssLight():
                     ok_set.add(sender)
                     continue
                 if self.poly_commit.verify_eval(commitment, sender+1, share_j, aux_j):
-                    if ((sender+1, share_j) not in recovery_set):
-                        recovery_set.add((sender+1, share_j))
+                    if ([sender+1, share_j] not in recovery_shares):
+                        recovery_shares.append([sender+1, share_j])
                     
 
         # Output the share as an integer so it is not tied to a type like ZR/GFElement

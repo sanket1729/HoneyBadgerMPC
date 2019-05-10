@@ -51,6 +51,8 @@ class AVID:
         self.retrieval_queue = asyncio.Queue()
         # the future value OK: retrive will be sent until ok is set
         self.ok_future = asyncio.Future()
+        # queue of retrieval requests
+        self.retrieval_requests = []
 
     def broadcast(self, o):
         for i in range(self.n):
@@ -160,6 +162,7 @@ class AVID:
             sender, msg = await self.recv()
             if msg[1] == AVIDMessageType.VAL and from_leader is None:
                 # Validation
+                print('AVID VAL')
                 (_, _, roothash_list, branch_list, stripes_for_each) = msg
                 if sender != self.leader:
                     logger.warning(
@@ -205,8 +208,12 @@ class AVID:
             elif msg[1] == AVIDMessageType.RETRIEVE:
                 _, _, index = msg
                 # send the response sender requested
-                self.send(sender, (sid, AVIDMessageType.RESPONSE, index,
-                                   my_roothash_list[index], my_stripes[index]))
+                if not self.ok_future.done():
+                    # enqueue a retrieve request
+                    self.retrieval_requests.append((sender, index))
+                else:
+                    self.send(sender, (sid, AVIDMessageType.RESPONSE, index,
+                                       my_roothash_list[index], my_stripes[index]))
 
             elif msg[1] == AVIDMessageType.RESPONSE:
                 # put in the queue for retrieve
@@ -225,3 +232,9 @@ class AVID:
                 # update ok future indicating ready for retrieve
                 if not self.ok_future.done():
                     self.ok_future.set_result(True)
+                    for (sender, index) in self.retrieval_requests:
+                        self.send(sender, (sid, AVIDMessageType.RESPONSE,
+                                           index,
+                                           my_roothash_list[index],
+                                           my_stripes[index]))
+                    self.retrieval_requests.clear()

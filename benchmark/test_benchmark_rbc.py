@@ -6,7 +6,10 @@ import asyncio
 import cProfile
 import os
 
-@mark.parametrize("t, msglen", [(5, 200), (5, 10000), (10, 200), (10, 10000)])
+@mark.parametrize("t, msglen", [(1, 200), (1, 10000), (3, 200), (3, 10000),
+                                (5, 200), (5, 10000), (10, 200), (10, 10000),
+                                (16, 200), (16, 10000), (25, 200), (25, 10000),
+                                (33, 200), (33, 10000), (50, 200), (50, 10000)])
 def test_benchmark_rbc(test_router, benchmark, t, msglen):
     loop = asyncio.get_event_loop()
     n = 3*t + 1
@@ -20,14 +23,15 @@ def test_benchmark_rbc(test_router, benchmark, t, msglen):
     #cProfile.runctx("_prog()", None, locals())
 
 
-@mark.parametrize("t, msglen", [(5, 200), (5, 10000), (10, 200), (10, 10000)])
+@mark.parametrize("t, msglen", [(1, 200), (1, 10000), (3, 200), (3, 10000),
+                                (5, 200), (5, 10000), (10, 200), (10, 10000),
+                                (16, 200), (16, 10000), (25, 200), (25, 10000),
+                                (33, 200), (33, 10000), (50, 200), (50, 10000)])
 def test_benchmark_rbc_dealer(test_router, benchmark, t, msglen):
     loop = asyncio.get_event_loop()
     n = 3*t + 1
     sends, recvs, _ = test_router(n)
-    msg = ""
-    for i in range(5000):
-        msg = msg + "Pad."
+    msg = os.urandom(msglen)
     params = (sends, recvs, t, n, msg)
 
     def _prog():

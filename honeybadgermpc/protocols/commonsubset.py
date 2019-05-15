@@ -1,5 +1,6 @@
 import asyncio
 import logging
+import time
 
 
 async def commonsubset(pid, n, f, rbc_out, aba_in, aba_out):
@@ -166,6 +167,7 @@ async def run_common_subset_in_processes(config, pbk, pvk, n, f, nodeid):
             make_commonsubset(
                 sid, nodeid, n, f, pbk, pvk, input_q.get, send, recv, bcast))
 
+        start_time = time.time()
         await input_q.put('<[ACS Input %d]>' % nodeid)
         acs, recv_tasks, work_tasks = await create_acs_task
         acs_output = await acs
@@ -174,6 +176,7 @@ async def run_common_subset_in_processes(config, pbk, pvk, n, f, nodeid):
             task.cancel()
 
         logging.info(f"OUTPUT: {acs_output}")
+        logging.info(f"Elapsed time: {time.time() - start_time}")
 
 
 if __name__ == "__main__":

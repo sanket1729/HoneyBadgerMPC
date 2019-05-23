@@ -1,0 +1,57 @@
+{
+    "mpc" : {
+        "command": "python -m honeybadgermpc.hbavss_batch",
+        "t": 1,
+        "n": 4,
+        "k": 1,
+        "num_faulty_nodes": 0,
+        "num_triples": 1000,
+        "port": 7000
+    },
+
+    "aws":{
+        "setup_file_path": "./aws/setup.sh",
+
+        "region":{
+            "sa-east-1": {
+                "vm_count": 1,
+                "security_group_ids": ["sg-0dfef222a2d4b2d2f"],
+                "image_id": "ami-03c6239555bb12112",
+                "key_file_path": "/home/amiller/.ssh/aws-amiller-uiuc.pem",
+                "key_name": "aws-amiller-uiuc"
+            },
+            "eu-central-1": {
+                "vm_count": 1,
+                "security_group_ids": ["sg-0c25c1a9b4cb83d5a"],
+                "image_id": "ami-0bdf93799014acdc4",
+                "key_file_path": "/home/amiller/.ssh/aws-amiller-uiuc.pem",
+                "key_name": "aws-amiller-uiuc"
+            },
+            "ca-central-1": {
+                "vm_count": 1,
+                "security_group_ids": ["sg-0eca21d071e9647c8"],
+                "image_id": "ami-0427e8367e3770df1",
+                "key_file_path": "/home/amiller/.ssh/aws-amiller-uiuc.pem",
+                "key_name": "aws-amiller-uiuc"
+            },
+            "us-east-1": {
+                "vm_count": 2,
+                "security_group_ids": ["sg-0faaf975"],
+                "image_id": "ami-0ac019f4fcb7cb7e6",
+                "key_file_path": "/home/amiller/.ssh/aws-amiller-uiuc.pem",
+                "key_name": "aws-amiller-uiuc"
+            }
+        },
+
+        "vm_name": "honeybadgermpc-vms",
+
+        "instance_type": "t2.medium",
+        "instance_user_name": "ubuntu",
+
+        "bucket_name": "honeybadgermpc"
+    },
+
+    "docker": {
+        "image_path": "socrates1024/honeybadgermpc:latest"
+    }
+}

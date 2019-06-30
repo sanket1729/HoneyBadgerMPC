@@ -22,7 +22,7 @@ def get_avss_params(n, t):
 @mark.parametrize("t, k", [(1, 5), (3, 5), (5, 5), (16, 5), (33, 5), (85, 5),
                            (1, 25), (3, 25), (5, 25), (16, 25), (33, 25), (85, 25),
                            (1, 50), (3, 50), (5, 50), (16, 50), (33, 50), (85, 50),
-                           (1, 100), (3, 100), (5, 100), (16, 100), (33, 100), (85, 100)])
+                           (1, 100), (3, 100), (5, 100), (16, 100), (33, 100), (85, 100)])  # (# noqa: E501)
 def test_benchmark_hbavss_lite_dealer(test_router, benchmark, t, k):
     loop = asyncio.get_event_loop()
     field = ZR
@@ -63,7 +63,7 @@ def test_benchmark_hbavss_dealer(test_router, benchmark, t, k):
 @mark.parametrize("t, k", [(1, 5), (3, 5), (5, 5), (16, 5), (33, 5), (85, 5),
                            (1, 25), (3, 25), (5, 25), (16, 25), (33, 25), (85, 25),
                            (1, 50), (3, 50), (5, 50), (16, 50), (33, 50), (85, 50),
-                           (1, 100), (3, 100), (5, 100), (16, 100), (33, 100), (85, 100)])
+                           (1, 100), (3, 100), (5, 100), (16, 100), (33, 100), (85, 100)])  # (# noqa: E501)
 def test_benchmark_hbavss_lite(test_router, benchmark, t, k):
     loop = asyncio.get_event_loop()
     # field = GF(Subgroup.BLS12_381)
@@ -100,7 +100,6 @@ def test_benchmark_hbavss(test_router, benchmark, t, k):
     def _prog():
         loop.run_until_complete(hbavss_batch_batch(test_router, params))
     benchmark(_prog)
-
 
 
 async def hbavss_light_batch(test_router, params):

@@ -53,7 +53,7 @@ async def rbc(params):
         else:
             rbc_tasks[i] = asyncio.create_task(
                 reliablebroadcast(tag, i, n, t, dealer_id, None, recvs[i], sends[i]))
-    msgs = await asyncio.gather(*rbc_tasks)
+    await asyncio.gather(*rbc_tasks)
     for task in rbc_tasks:
         task.cancel()
 

@@ -1,8 +1,14 @@
 # Number of transactions
-NUMTX = 500000
+NUMTX = 500
 
 # Number of parties
-NUM_CLIENTS = 64
+NUM_CLIENTS = 8
+
+# Number of serves
+n = 4
+
+# Number of corruptions
+t = 1
 
 # Average payment amount
 mu_tx = 10000.00
@@ -18,5 +24,14 @@ tx_file_suffix = "_tx_data.csv"
 
 bal_file_prefix = "party_"
 bal_file_suffix = "_bal_data.csv"
+
+rand_share_file_prefix = "rand_"
+rand_share_file_suffix = "_share.txt"
+
+tx_mask_input_prefix = "mask_tx"
+tx_mask_input_suffix = "_input.txt"
+
+bal_mask_input_prefix = "mask_bal"
+bal_mask_input_suffix = "_input.txt"
 
 NETTING_BASE_DIR = "/usr/src/HoneyBadgerMPC/apps/netting/"

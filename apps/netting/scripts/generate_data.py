@@ -43,7 +43,7 @@ def gen_data_files():
     f = open_tx_files()
 
     for i in range(0, NUMTX):
-        # sample random sender: Samples from 1 through to N
+        # sample random sender: Samples from 0 through to N-1
         sender = random.randint(0, NUM_CLIENTS - 1)
 
         # sample reciever such that it is different from sender
@@ -57,7 +57,9 @@ def gen_data_files():
         amount = random.gauss(mu_tx, sigma_tx)
         # Add the tx to sender file
         f[sender].write(
-            str(sender)
+            str(i) # transaction id
+            + ","
+            + str(sender)
             + ","
             + str(reciever)
             + ","
@@ -66,7 +68,9 @@ def gen_data_files():
         )
         # Add tx to reciever file
         f[reciever].write(
-            str(sender)
+            str(i)
+            + ","
+            + str(sender)
             + ","
             + str(reciever)
             + ","
@@ -89,7 +93,7 @@ def clean_files():
     try:
         shutil.rmtree(path)
     except Exception as e:
-        logging.exception(e)
+        logging.info(e)
         pass
     os.makedirs(NETTING_BASE_DIR + "data")
 
